@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html><body style="background:#000;color:#0f0;font:14px monospace;padding:10px">
+<h3>Diagnóstico MECHA BARGE</h3>
+<pre id="o"></pre>
+<script>
+const o = document.getElementById("o");
+const log = m => o.textContent += m + "\n";
+addEventListener("error", e => log("ERRO: " + e.message + " @ " + (e.filename||"") + ":" + (e.lineno||"")), true);
+addEventListener("unhandledrejection", e => log("PROMISE: " + e.reason));
+
+const files = ["index.html","js/game.js","js/net.js","js/gamepad.js","js/mapgen.js","Basic Start.json"];
+(async () => {
+  for (const f of files) {
+    try {
+      const r = await fetch("./" + encodeURI(f), {cache:"no-store"});
+      const t = await r.text();
+      log(`${r.ok ? "OK " : "FALTA"} ${r.status} ${f} (${t.length} bytes) início: ${JSON.stringify(t.slice(0,40))}`);
+    } catch (e) { log("FALHA " + f + ": " + e); }
+  }
+  log("\nTestando import dos módulos...");
+  for (const m of ["net","gamepad","mapgen","game"]) {
+    try { await import("./js/" + m + ".js?v=" + Date.now()); log("IMPORT OK: " + m); }
+    catch (e) { log("IMPORT ERRO " + m + ": " + e.message); }
+  }
+})();
+</script>
+</body></html>
