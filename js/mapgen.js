@@ -1,3 +1,20 @@
+// Gerador aleatório com seed (mapas reproduzíveis)
+let _seed = Date.now() % 2147483647;
+export function R() {
+  _seed = (_seed * 16807) % 2147483647;
+  return (_seed - 1) / 2147483646;
+}
+
+// Posições das bases: ajuste para as coordenadas reais do seu jogo
+const BASES = [
+  { x: 8, y: 30 },
+  { x: 91, y: 30 }
+];
+
+export function nearBase(x, y, dist) {
+  return BASES.some(b => Math.hypot(x - b.x, y - b.y) < dist);
+}
+
 // Ajuste os nomes caso seus sprites sejam diferentes
 const T = {
   ground: "grass_block",
