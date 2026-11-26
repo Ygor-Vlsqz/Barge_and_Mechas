@@ -180,7 +180,6 @@
     }
     .hud-overlay strong { color: #38bdf8; }
 
-    /* Painel Direito: Camada Ativa */
     .layer-bar {
       position: absolute;
       top: 12px;
@@ -195,7 +194,6 @@
       width: 195px;
       z-index: 5;
     }
-    /* Painel Esquerdo: Calibração Isométrica */
     .calib-bar {
       position: absolute;
       top: 12px;
@@ -261,7 +259,6 @@
       cursor: pointer;
     }
 
-    /* Modal Export/Import */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -336,7 +333,6 @@
       <button data-cat="nature">Árvores</button>
       <button data-cat="objects">Objetos</button>
       <button data-cat="indicators">Indicadores</button>
-
     </div>
     <div class="search-box">
       <input type="text" id="search-input" placeholder="Filtrar sprite por nome..." />
@@ -354,36 +350,37 @@
       <div class="calib-row">
         <div class="calib-header">
           <span>Largura Grade (ISO_W):</span>
-          <input type="number" id="num-iso-w" class="calib-num" min="64" max="320" value="128" />
+          <input type="number" id="num-iso-w" class="calib-num" min="64" max="320" value="220" />
         </div>
-        <input type="range" id="rng-iso-w" min="64" max="320" step="1" value="128" />
+        <input type="range" id="rng-iso-w" min="64" max="320" step="1" value="220" />
       </div>
 
       <div class="calib-row">
         <div class="calib-header">
           <span>Altura Grade (ISO_H):</span>
-          <input type="number" id="num-iso-h" class="calib-num" min="32" max="220" value="64" />
+          <input type="number" id="num-iso-h" class="calib-num" min="32" max="220" value="110" />
         </div>
-        <input type="range" id="rng-iso-h" min="32" max="220" step="1" value="64" />
+        <input type="range" id="rng-iso-h" min="32" max="220" step="1" value="110" />
       </div>
 
       <div class="calib-row">
         <div class="calib-header">
           <span>Passo Camada (Z):</span>
-          <input type="number" id="num-layer-y" class="calib-num" min="10" max="160" value="64" />
+          <input type="number" id="num-layer-y" class="calib-num" min="10" max="160" value="114" />
         </div>
-        <input type="range" id="rng-layer-y" min="10" max="160" step="1" value="64" />
+        <input type="range" id="rng-layer-y" min="10" max="160" step="1" value="114" />
       </div>
 
       <div class="calib-row">
         <div class="calib-header">
           <span>Offset Vertical Y:</span>
-          <input type="number" id="num-offset-y" class="calib-num" min="-150" max="150" value="0" />
+          <input type="number" id="num-offset-y" class="calib-num" min="-150" max="150" value="118" />
         </div>
-        <input type="range" id="rng-offset-y" min="-150" max="150" step="1" value="0" />
+        <input type="range" id="rng-offset-y" min="-150" max="150" step="1" value="118" />
       </div>
 
       <div style="display:flex; gap:4px;">
+        <button id="btn-preset-default" style="flex:1; font-size:11px;" title="Voltar aos valores padrão">↺ Padrão</button>
         <button id="btn-preset-128" style="flex:1; font-size:11px;" title="Padrão Kenney 128×64">128×64</button>
         <button id="btn-preset-256" style="flex:1; font-size:11px;" title="Escala cheia 256×128">256×128</button>
       </div>
@@ -440,9 +437,14 @@ const PATHS = {
   objects: "sprites/objects/",
   actors: "sprites/actors/"
 };
-const GRID_SIZE = 10;
+let GRID_SIZE = Number(localStorage.getItem("gridSize")) || 10;
 const MAX_LAYERS = 5;
 const DIRS = ["N", "E", "S", "W"];
+
+// ===== DEFAULTS (edite aqui) =====
+const DEFAULTS = { ISO_W: 220, ISO_H: 110, LAYER_STEP_Y: 114, spriteOffsetY: 118, zoom: 0.65 };
+const OBJ_SCALE = 1; // escala extra para objetos/indicadores (ex: 0.5, 1.5, 2)
+const STORAGE_KEY = "isoCalib";
 
 // Sprites com um único ângulo (sem _N/_E/_S/_W)
 const SINGLE_ANGLE = new Set(["crate-medium", "crate-small", "crate-wide"]);
@@ -499,7 +501,7 @@ const CATALOG = {
     "switchFloorOff", "switchFloorOn", "switchWallOff", "switchWallOn"
   ],
   indicators: [
-    "arrowWall" // adicione aqui os outros indicadores da pasta objects
+    "arrowWall"
   ],
   spawns: [
     { id: "spawn_barge", label: "Barcaça (2×2)", file: null, color: "#f59e0b", size: 2 },
@@ -515,7 +517,6 @@ const CATALOG = {
 const OBJECT_IDS = new Set(CATALOG.objects);
 const INDICATOR_IDS = new Set(CATALOG.indicators);
 
-// Monta o caminho completo de qualquer sprite
 function spritePath(base, dir) {
   const isObj = OBJECT_IDS.has(base) || INDICATOR_IDS.has(base);
   const folder = isObj ? PATHS.objects : PATHS.tiles;
@@ -523,14 +524,13 @@ function spritePath(base, dir) {
   return folder + name;
 }
 
-
 // Estado do editor
 let currentCat = "terrain";
 let selectedBase = "grass_block";
 let currentDir = "S";
 let currentZ = 0;
 let currentTool = "paint";
-let zoom = 0.65;
+let zoom = DEFAULTS.zoom;
 let camX = 0;
 let camY = 140;
 let isPanning = false;
@@ -539,12 +539,10 @@ let isMouseDown = false;
 let mouseButton = 0;
 let hoverCell = null;
 
-// Mapa 3D: layers[z][y][x]
 let layers = Array.from({ length: MAX_LAYERS }, () =>
   Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null))
 );
 
-// Cache de imagens
 const imgCache = new Map();
 function getSpriteImage(filename) {
   if (!filename) return null;
@@ -556,11 +554,10 @@ function getSpriteImage(filename) {
   return img;
 }
 
-// Métricas isométricas calibráveis (inicia em 128×64, padrão 2:1 Kenney)
-let ISO_W = 128;
-let ISO_H = 64;
-let LAYER_STEP_Y = 64;
-let spriteOffsetY = 0;
+let ISO_W = DEFAULTS.ISO_W;
+let ISO_H = DEFAULTS.ISO_H;
+let LAYER_STEP_Y = DEFAULTS.LAYER_STEP_Y;
+let spriteOffsetY = DEFAULTS.spriteOffsetY;
 
 function gridToScreen(gx, gy, gz) {
   const sx = (gx - gy) * (ISO_W * 0.5) * zoom + camX;
@@ -576,7 +573,7 @@ function screenToGrid(sx, sy, gz) {
   return { gx, gy };
 }
 
-// Controles do painel Calibração Iso (Esquerda)
+// Calibração
 const rngIsoW = document.getElementById("rng-iso-w");
 const numIsoW = document.getElementById("num-iso-w");
 const rngIsoH = document.getElementById("rng-iso-h");
@@ -585,6 +582,12 @@ const rngLayerY = document.getElementById("rng-layer-y");
 const numLayerY = document.getElementById("num-layer-y");
 const rngOffsetY = document.getElementById("rng-offset-y");
 const numOffsetY = document.getElementById("num-offset-y");
+
+function saveCalib() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    ISO_W, ISO_H, LAYER_STEP_Y, spriteOffsetY, zoom
+  }));
+}
 
 function updateCalibValues(isoW, isoH, layerY, offsetY) {
   ISO_W = Number(isoW);
@@ -599,17 +602,22 @@ function updateCalibValues(isoW, isoH, layerY, offsetY) {
   numLayerY.value = LAYER_STEP_Y;
   rngOffsetY.value = spriteOffsetY;
   numOffsetY.value = spriteOffsetY;
+  saveCalib();
 }
 
 rngIsoW.addEventListener("input", () => updateCalibValues(rngIsoW.value, ISO_H, LAYER_STEP_Y, spriteOffsetY));
-numIsoW.addEventListener("input", () => updateCalibValues(numIsoW.value || 128, ISO_H, LAYER_STEP_Y, spriteOffsetY));
+numIsoW.addEventListener("input", () => updateCalibValues(numIsoW.value || DEFAULTS.ISO_W, ISO_H, LAYER_STEP_Y, spriteOffsetY));
 rngIsoH.addEventListener("input", () => updateCalibValues(ISO_W, rngIsoH.value, LAYER_STEP_Y, spriteOffsetY));
-numIsoH.addEventListener("input", () => updateCalibValues(ISO_W, numIsoH.value || 64, LAYER_STEP_Y, spriteOffsetY));
+numIsoH.addEventListener("input", () => updateCalibValues(ISO_W, numIsoH.value || DEFAULTS.ISO_H, LAYER_STEP_Y, spriteOffsetY));
 rngLayerY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, rngLayerY.value, spriteOffsetY));
-numLayerY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, numLayerY.value || 64, spriteOffsetY));
+numLayerY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, numLayerY.value || DEFAULTS.LAYER_STEP_Y, spriteOffsetY));
 rngOffsetY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, LAYER_STEP_Y, rngOffsetY.value));
 numOffsetY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, LAYER_STEP_Y, numOffsetY.value || 0));
 
+document.getElementById("btn-preset-default").addEventListener("click", () => {
+  zoom = DEFAULTS.zoom;
+  updateCalibValues(DEFAULTS.ISO_W, DEFAULTS.ISO_H, DEFAULTS.LAYER_STEP_Y, DEFAULTS.spriteOffsetY);
+});
 document.getElementById("btn-preset-128").addEventListener("click", () => {
   updateCalibValues(128, 64, 64, 0);
 });
@@ -617,7 +625,7 @@ document.getElementById("btn-preset-256").addEventListener("click", () => {
   updateCalibValues(256, 128, 64, 0);
 });
 
-// Inicializa mapa exemplo
+// Mapa exemplo
 function buildSampleMap() {
   layers = Array.from({ length: MAX_LAYERS }, () =>
     Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null))
@@ -643,7 +651,7 @@ function buildSampleMap() {
   };
 }
 
-// Renderiza Paleta lateral
+// Paleta
 const paletteEl = document.getElementById("palette-grid");
 const searchInput = document.getElementById("search-input");
 
@@ -688,7 +696,7 @@ function renderPalette() {
   });
 }
 
-// Canvas e Loop de Desenho
+// Canvas
 const canvas = document.getElementById("iso-canvas");
 const ctx = canvas.getContext("2d");
 
@@ -713,22 +721,15 @@ function drawDiamond(cx, cy, w, h, stroke, fill) {
 
 function drawTileCell(cell, gx, gy, gz, alpha = 1) {
   const { x, y } = gridToScreen(gx, gy, gz);
-  const drawW = img.naturalWidth * zoom;
-  const drawH = img.naturalHeight * zoom;
+  const w = ISO_W * zoom;
+  const h = ISO_H * zoom;
 
   ctx.save();
   ctx.globalAlpha = alpha;
 
   if (cell.isSpawn) {
     const scale = cell.size || 1;
-    drawDiamond(
-      x,
-      y + (scale - 1) * h * 0.5,
-      w * scale,
-      h * scale,
-      cell.color,
-      cell.color + "44"
-    );
+    drawDiamond(x, y + (scale - 1) * h * 0.5, w * scale, h * scale, cell.color, cell.color + "44");
     if (cell.file) {
       const img = getSpriteImage(cell.file);
       if (img && img.complete && img.naturalWidth > 0) {
@@ -742,18 +743,13 @@ function drawTileCell(cell, gx, gy, gz, alpha = 1) {
     ctx.textAlign = "center";
     ctx.fillText(cell.label, x, y + 4);
   } else {
-    const filename = spritePath(cell.base, cell.dir);
-    const img = getSpriteImage(filename);
+    const img = getSpriteImage(spritePath(cell.base, cell.dir));
     if (img && img.complete && img.naturalWidth > 0) {
-      const drawW = 256 * zoom;
-      const drawH = 352 * zoom;
-      ctx.drawImage(
-        img,
-        x - drawW * 0.5,
-        y + h * 0.5 + spriteOffsetY * zoom - drawH,
-        drawW,
-        drawH
-      );
+      const isObjSprite = OBJECT_IDS.has(cell.base) || INDICATOR_IDS.has(cell.base);
+      const s = isObjSprite ? OBJ_SCALE : 1;
+      const drawW = img.naturalWidth * zoom * s;
+      const drawH = img.naturalHeight * zoom * s;
+      ctx.drawImage(img, x - drawW * 0.5, y + h * 0.5 + spriteOffsetY * zoom - drawH, drawW, drawH);
     } else {
       drawDiamond(x, y, w, h, "#38bdf8", "rgba(56, 189, 248, 0.2)");
     }
@@ -779,9 +775,7 @@ function renderLoop() {
         if (gy < 0 || gy >= GRID_SIZE) continue;
 
         const cell = layers[z][gy][gx];
-        if (cell) {
-          drawTileCell(cell, gx, gy, z, alpha);
-        }
+        if (cell) drawTileCell(cell, gx, gy, z, alpha);
 
         if (z === currentZ && showGrid) {
           const { x, y } = gridToScreen(gx, gy, z);
@@ -811,7 +805,7 @@ function renderLoop() {
   requestAnimationFrame(renderLoop);
 }
 
-// Aplicação de ferramenta na célula
+// Ferramentas
 function applyToolAt(gx, gy) {
   if (gx < 0 || gx >= GRID_SIZE || gy < 0 || gy >= GRID_SIZE) return;
   if (currentTool === "erase" || mouseButton === 2) {
@@ -842,14 +836,14 @@ function applyToolAt(gx, gy) {
       file: spawnObj.file
     };
   } else {
-  const cell = { base: selectedBase, dir: currentDir };
-  if (OBJECT_IDS.has(selectedBase)) cell.interactive = true;
-  if (INDICATOR_IDS.has(selectedBase)) { cell.indicator = true; cell.collision = false; }
-  layers[currentZ][gy][gx] = cell;
+    const cell = { base: selectedBase, dir: currentDir };
+    if (OBJECT_IDS.has(selectedBase)) cell.interactive = true;
+    if (INDICATOR_IDS.has(selectedBase)) { cell.indicator = true; cell.collision = false; }
+    layers[currentZ][gy][gx] = cell;
   }
 }
 
-// Eventos do Mouse no Canvas
+// Mouse
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 
 canvas.addEventListener("mousedown", e => {
@@ -879,9 +873,7 @@ canvas.addEventListener("mousemove", e => {
     return;
   }
   hoverCell = screenToGrid(mx, my, currentZ);
-  if (isMouseDown) {
-    applyToolAt(hoverCell.gx, hoverCell.gy);
-  }
+  if (isMouseDown) applyToolAt(hoverCell.gx, hoverCell.gy);
 });
 
 window.addEventListener("mouseup", () => {
@@ -893,9 +885,10 @@ canvas.addEventListener("wheel", e => {
   e.preventDefault();
   const factor = e.deltaY < 0 ? 1.12 : 0.89;
   zoom = Math.min(1.8, Math.max(0.18, zoom * factor));
+  saveCalib();
 }, { passive: false });
 
-// Controles da UI e Atalhos
+// UI
 function setTool(t) {
   currentTool = t;
   document.getElementById("tool-paint").classList.toggle("active", t === "paint");
@@ -925,9 +918,7 @@ document.getElementById("btn-rotate").onclick = rotateDir;
 
 document.getElementById("btn-fill-layer").onclick = () => {
   for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
-      applyToolAt(x, y);
-    }
+    for (let x = 0; x < GRID_SIZE; x++) applyToolAt(x, y);
   }
 };
 
@@ -938,8 +929,8 @@ document.getElementById("btn-clear").onclick = () => {
   );
 };
 
-document.getElementById("btn-zoom-in").onclick = () => { zoom = Math.min(1.8, zoom * 1.15); };
-document.getElementById("btn-zoom-out").onclick = () => { zoom = Math.max(0.18, zoom * 0.87); };
+document.getElementById("btn-zoom-in").onclick = () => { zoom = Math.min(1.8, zoom * 1.15); saveCalib(); };
+document.getElementById("btn-zoom-out").onclick = () => { zoom = Math.max(0.18, zoom * 0.87); saveCalib(); };
 
 document.querySelectorAll("#layer-btns button").forEach(btn => {
   btn.onclick = () => setLayer(Number(btn.dataset.z));
@@ -966,7 +957,7 @@ window.addEventListener("keydown", e => {
   if (["1", "2", "3", "4", "5"].includes(k)) setLayer(Number(k) - 1);
 });
 
-// Modal Exportar / Importar JSON
+// Modal JSON
 const modal = document.getElementById("json-modal");
 const textarea = document.getElementById("json-textarea");
 
@@ -976,12 +967,7 @@ document.getElementById("btn-export").onclick = () => {
     gridSize: GRID_SIZE,
     maxLayers: MAX_LAYERS,
     repoBase: REPO_RAW,
-    isoMetrics: {
-      ISO_W,
-      ISO_H,
-      LAYER_STEP_Y,
-      spriteOffsetY
-    },
+    isoMetrics: { ISO_W, ISO_H, LAYER_STEP_Y, spriteOffsetY },
     layers
   };
   textarea.value = JSON.stringify(payload, null, 2);
@@ -1011,10 +997,10 @@ document.getElementById("btn-import-json").onclick = () => {
     layers = parsed.layers;
     if (parsed.isoMetrics) {
       updateCalibValues(
-        parsed.isoMetrics.ISO_W ?? 220,
-        parsed.isoMetrics.ISO_H ?? 110,
-        parsed.isoMetrics.LAYER_STEP_Y ?? 114,
-        parsed.isoMetrics.spriteOffsetY ?? 118
+        parsed.isoMetrics.ISO_W ?? DEFAULTS.ISO_W,
+        parsed.isoMetrics.ISO_H ?? DEFAULTS.ISO_H,
+        parsed.isoMetrics.LAYER_STEP_Y ?? DEFAULTS.LAYER_STEP_Y,
+        parsed.isoMetrics.spriteOffsetY ?? DEFAULTS.spriteOffsetY
       );
     }
     modal.classList.remove("open");
@@ -1024,6 +1010,19 @@ document.getElementById("btn-import-json").onclick = () => {
 };
 
 // Boot
+const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+if (saved) {
+  zoom = saved.zoom ?? DEFAULTS.zoom;
+  updateCalibValues(
+    saved.ISO_W ?? DEFAULTS.ISO_W,
+    saved.ISO_H ?? DEFAULTS.ISO_H,
+    saved.LAYER_STEP_Y ?? DEFAULTS.LAYER_STEP_Y,
+    saved.spriteOffsetY ?? DEFAULTS.spriteOffsetY
+  );
+} else {
+  updateCalibValues(DEFAULTS.ISO_W, DEFAULTS.ISO_H, DEFAULTS.LAYER_STEP_Y, DEFAULTS.spriteOffsetY);
+}
+
 resizeCanvas();
 buildSampleMap();
 renderPalette();
