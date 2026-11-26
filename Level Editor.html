@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MECHA BARGE — Editor de Níveis Isométrico 10×10</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0b0f17;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      background: #111827;
+      border-bottom: 1px solid #1f2937;
+      padding: 8px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      z-index: 10;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: #38bdf8;
+      font-size: 14px;
+    }
+    .brand span {
+      background: #1e293b;
+      color: #94a3b8;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    button, select {
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    button:hover { background: #334155; border-color: #475569; }
+    button.active {
+      background: #0284c7;
+      border-color: #38bdf8;
+      color: #fff;
+    }
+    button.danger { border-color: #7f1d1d; color: #fca5a5; }
+    button.danger:hover { background: #7f1d1d; color: #fff; }
+    button.success { background: #059669; border-color: #10b981; color: #fff; }
+    button.success:hover { background: #047857; }
+
+    .main-layout {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    aside {
+      width: 310px;
+      background: #111827;
+      border-right: 1px solid #1f2937;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      padding: 8px;
+      background: #0f172a;
+      border-bottom: 1px solid #1f2937;
+    }
+    .tabs button {
+      font-size: 11px;
+      padding: 6px 4px;
+      text-align: center;
+    }
+    .search-box {
+      padding: 8px;
+      border-bottom: 1px solid #1f2937;
+    }
+    .search-box input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: #f8fafc;
+      font-size: 12px;
+      outline: none;
+    }
+    .search-box input:focus { border-color: #38bdf8; }
+
+    .palette-grid {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      align-content: start;
+    }
+    .tile-card {
+      background: #1e293b;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      padding: 6px 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: 0.12s;
+    }
+    .tile-card:hover { background: #273549; }
+    .tile-card.selected {
+      border-color: #38bdf8;
+      background: #0c4a6e;
+    }
+    .tile-card img {
+      width: 56px;
+      height: 68px;
+      object-fit: contain;
+      image-rendering: pixelated;
+    }
+    .tile-card span {
+      font-size: 10px;
+      text-align: center;
+      color: #cbd5e1;
+      word-break: break-word;
+      line-height: 1.15;
+    }
+
+    .viewport {
+      flex: 1;
+      position: relative;
+      background: radial-gradient(circle at center, #162032 0%, #090d14 100%);
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+    .hud-overlay {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: #94a3b8;
+      pointer-events: none;
+      line-height: 1.5;
+    }
+    .hud-overlay strong { color: #38bdf8; }
+
+    /* Painel Direito: Camada Ativa */
+    .layer-bar {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 195px;
+      z-index: 5;
+    }
+    /* Painel Esquerdo: Calibração Isométrica */
+    .calib-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      width: 220px;
+      z-index: 5;
+    }
+    .calib-row {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 11px;
+      color: #cbd5e1;
+    }
+    .calib-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .calib-num {
+      width: 56px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      color: #38bdf8;
+      font-weight: 700;
+      font-size: 11px;
+      padding: 2px 4px;
+      text-align: right;
+    }
+    .calib-row input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: #38bdf8;
+    }
+
+    .layer-bar-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .layer-btns {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+    }
+    .layer-btns button { padding: 5px 0; font-size: 11px; }
+    .chk-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #cbd5e1;
+      cursor: pointer;
+    }
+
+    /* Modal Export/Import */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: #111827;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      width: min(640px, 92vw);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .modal h3 { font-size: 15px; color: #38bdf8; }
+    .modal textarea {
+      width: 100%;
+      height: 240px;
+      background: #090d14;
+      color: #a7f3d0;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 11px;
+      resize: vertical;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    MECHA BARGE <span>EDITOR ISOMÉTRICO 10×10</span>
+  </div>
+
+  <div class="toolbar-group">
+    <button id="tool-paint" class="active" title="Pintar (Clique Esq)">🖌️ Pintar</button>
+    <button id="tool-erase" title="Apagar (Tecla X ou Botão Dir)">🧹 Apagar</button>
+    <button id="tool-pick" title="Conta-gotas (Tecla I)">🧪 Copiar</button>
+    <button id="btn-rotate" title="Rotacionar Tile (Tecla R)">🔄 Dir: <span id="dir-label">S</span></button>
+    <button id="btn-fill-layer" title="Preencher camada atual com tile selecionado">🪣 Preencher Camada</button>
+  </div>
+
+  <div class="toolbar-group">
+    <button id="btn-sample" title="Gerar terreno exemplo">✨ Exemplo</button>
+    <button id="btn-clear" class="danger" title="Limpar mapa inteiro">🗑️ Limpar</button>
+    <button id="btn-export" class="success">📤 Exportar / Importar JSON</button>
+  </div>
+</header>
+
+<div class="main-layout">
+  <aside>
+    <div class="tabs" id="cat-tabs">
+      <button class="active" data-cat="terrain">Terreno</button>
+      <button data-cat="cliffs">Relevo/Escada</button>
+      <button data-cat="buildings">Prédios</button>
+      <button data-cat="roofs">Telhados</button>
+      <button data-cat="props">Cercas/Rochas</button>
+      <button data-cat="spawns">Mechas/Base</button>
+      <button data-cat="nature">Árvores</button>
+      <button data-cat="objects">Objetos</button>
+      <button data-cat="indicators">Indicadores</button>
+
+    </div>
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="Filtrar sprite por nome..." />
+    </div>
+    <div class="palette-grid" id="palette-grid"></div>
+  </aside>
+
+  <div class="viewport">
+    <canvas id="iso-canvas"></canvas>
+
+    <!-- Painel Esquerdo: Calibração Isométrica -->
+    <div class="calib-bar" id="calib-bar">
+      <div class="layer-bar-title">Calibração Iso</div>
+
+      <div class="calib-row">
+        <div class="calib-header">
+          <span>Largura Grade (ISO_W):</span>
+          <input type="number" id="num-iso-w" class="calib-num" min="64" max="320" value="128" />
+        </div>
+        <input type="range" id="rng-iso-w" min="64" max="320" step="1" value="128" />
+      </div>
+
+      <div class="calib-row">
+        <div class="calib-header">
+          <span>Altura Grade (ISO_H):</span>
+          <input type="number" id="num-iso-h" class="calib-num" min="32" max="220" value="64" />
+        </div>
+        <input type="range" id="rng-iso-h" min="32" max="220" step="1" value="64" />
+      </div>
+
+      <div class="calib-row">
+        <div class="calib-header">
+          <span>Passo Camada (Z):</span>
+          <input type="number" id="num-layer-y" class="calib-num" min="10" max="160" value="64" />
+        </div>
+        <input type="range" id="rng-layer-y" min="10" max="160" step="1" value="64" />
+      </div>
+
+      <div class="calib-row">
+        <div class="calib-header">
+          <span>Offset Vertical Y:</span>
+          <input type="number" id="num-offset-y" class="calib-num" min="-150" max="150" value="0" />
+        </div>
+        <input type="range" id="rng-offset-y" min="-150" max="150" step="1" value="0" />
+      </div>
+
+      <div style="display:flex; gap:4px;">
+        <button id="btn-preset-128" style="flex:1; font-size:11px;" title="Padrão Kenney 128×64">128×64</button>
+        <button id="btn-preset-256" style="flex:1; font-size:11px;" title="Escala cheia 256×128">256×128</button>
+      </div>
+    </div>
+
+    <!-- Painel Direito: Camada Ativa -->
+    <div class="layer-bar">
+      <div class="layer-bar-title">Camada Ativa (Z = <span id="layer-label">0</span>)</div>
+      <div class="layer-btns" id="layer-btns">
+        <button class="active" data-z="0">Z0</button>
+        <button data-z="1">Z1</button>
+        <button data-z="2">Z2</button>
+        <button data-z="3">Z3</button>
+        <button data-z="4">Z4</button>
+      </div>
+      <label class="chk-row">
+        <input type="checkbox" id="chk-xray" checked />
+        Transparência camadas acima
+      </label>
+      <label class="chk-row">
+        <input type="checkbox" id="chk-grid" checked />
+        Mostrar grade da camada
+      </label>
+      <div style="display:flex; gap:4px; margin-top:2px;">
+        <button id="btn-zoom-out" style="flex:1;">➖ Zoom</button>
+        <button id="btn-zoom-in" style="flex:1;">➕ Zoom</button>
+      </div>
+    </div>
+
+    <div class="hud-overlay">
+      <strong>Controles:</strong> Clique Esq = Colocar | Clique Dir ou <strong>X</strong> = Apagar | <strong>R</strong> = Girar (N/E/S/W) | <strong>1-5</strong> = Camadas | <strong>I</strong> = Conta-gotas | <strong>Arrastar Meio / Shift+Arrastar</strong> = Mover câmera | <strong>Scroll</strong> = Zoom
+    </div>
+  </div>
+</div>
+
+<!-- Modal Export/Import -->
+<div class="modal-backdrop" id="json-modal">
+  <div class="modal">
+    <h3>Exportar / Importar Nível (10×10 × 5 Camadas)</h3>
+    <textarea id="json-textarea" spellcheck="false"></textarea>
+    <div class="modal-actions">
+      <button id="btn-copy-json">📋 Copiar JSON</button>
+      <button id="btn-download-json" class="success">💾 Baixar .json</button>
+      <button id="btn-import-json">📥 Carregar JSON colado</button>
+      <button id="btn-close-modal" class="danger">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const REPO_RAW = "https://raw.githubusercontent.com/Ygor-Vlsqz/Barge_and_Mechas/main/";
+const PATHS = {
+  tiles: "sprites/tiles/",
+  objects: "sprites/objects/",
+  actors: "sprites/actors/"
+};
+const GRID_SIZE = 10;
+const MAX_LAYERS = 5;
+const DIRS = ["N", "E", "S", "W"];
+
+// Sprites com um único ângulo (sem _N/_E/_S/_W)
+const SINGLE_ANGLE = new Set(["crate-medium", "crate-small", "crate-wide"]);
+
+const CATALOG = {
+  terrain: [
+    "grass_block", "grass_center", "grass_corner",
+    "grass_path", "grass_pathBend", "grass_pathCorner", "grass_pathCrossing",
+    "grass_pathEnd", "grass_pathEndSquare", "grass_pathSlope", "grass_pathSplit",
+    "grass_river", "grass_riverBend", "grass_riverBridge", "grass_riverCorner",
+    "grass_riverCrossing", "grass_riverEnd", "grass_riverEndSquare", "grass_riverSlope", "grass_riverSplit",
+    "grass_water", "grass_waterConcave", "grass_waterConvex", "grass_waterRiver",
+    "water_center", "water_fall",
+    "dirt_center", "dirt_corner", "dirt_low",
+    "tiles", "tiles_crumbled", "tiles_decorated", "tiles_steps",
+    "furrow", "furrow_crop", "furrow_cropWheat", "furrow_end"
+  ],
+  cliffs: [
+    "cliff", "cliff_corner", "cliff_cornerInner", "cliff_entrance",
+    "cliff_top", "cliff_topCorner", "cliff_topCornerInner", "cliff_topEntrance",
+    "grass_slope", "grass_slopeConcave", "grass_slopeConvex",
+    "stairs_full", "stairs_left", "stairs_right"
+  ],
+  buildings: [
+    "building_center", "building_sides",
+    "building_dark_center", "building_dark_center_door", "building_dark_center_windows",
+    "building_dark_sides", "building_dark_sides_door", "building_dark_sides_windows",
+    "building_stack", "building_stackBeige", "building_stackCorner", "building_stackCornerBeige",
+    "balcony_stone", "balcony_wood",
+    "castle_end", "castle_endRound", "castle_endRuined", "castle_towerCenter",
+    "castle_towerBeigeBase", "castle_towerBeigeTop", "castle_towerBrownBase", "castle_towerBrownTop",
+    "castle_towerGreenBase", "castle_towerGreenTop", "castle_towerPurpleBase", "castle_towerPurpleTop",
+    "walls_broken", "walls_corner", "walls_end", "walls_left", "walls_right", "walls_sides", "walls_square",
+    "structure_tent", "structure_tentSlant", "well"
+  ],
+  roofs: [
+    "dome", "dome_small",
+    "roof_gableCornerBeige", "roof_gableCornerBrown", "roof_gableCornerGreen", "roof_gableCornerPurple",
+    "roof_roundCornerBeige", "roof_roundCornerBrown", "roof_roundCornerGreen", "roof_roundCornerPurple",
+    "roof_slantCornerBeige", "roof_slantCornerBrown", "roof_slantCornerGreen", "roof_slantCornerPurple",
+    "roof_slantCornerInnerBeige", "roof_slantCornerInnerBrown", "roof_slantCornerInnerGreen", "roof_slantCornerInnerPurple"
+  ],
+  props: [
+    "rocks", "overhang", "overhang_small",
+    "fence_wood", "fence_woodCorner", "fence_woodCurve", "fence_woodEnd",
+    "fence_woodDouble", "fence_woodDoubleCorner", "fence_woodDoubleCurve", "fence_woodDoubleEnd"
+  ],
+  nature: ["tree", "trees", "tree_pine", "tree_pineLarge"],
+  objects: [
+    "block", "blockHalf", "blockQuarter",
+    "column", "columnBlocks", "columnCorner",
+    "crate", "crate-medium", "crate-small", "crate-wide",
+    "ladder",
+    "switchFloorOff", "switchFloorOn", "switchWallOff", "switchWallOn"
+  ],
+  indicators: [
+    "arrowWall" // adicione aqui os outros indicadores da pasta objects
+  ],
+  spawns: [
+    { id: "spawn_barge", label: "Barcaça (2×2)", file: null, color: "#f59e0b", size: 2 },
+    { id: "mech_Juggler", label: "Juggler (4 Pernas)", file: PATHS.actors + "Juggler.png", color: "#38bdf8", size: 1 },
+    { id: "mech_Roamer", label: "Roamer (Flutua)", file: PATHS.actors + "Roamer.png", color: "#a855f7", size: 1 },
+    { id: "mech_Skipper", label: "Skipper (Sniper)", file: PATHS.actors + "Skipper.png", color: "#10b981", size: 1 },
+    { id: "mech_Watcher", label: "Watcher (2×2)", file: PATHS.actors + "Watcher.png", color: "#f43f5e", size: 2 },
+    { id: "spawn_enemy", label: "Spawn Inimigo", file: null, color: "#ef4444", size: 1 },
+    { id: "spawn_loot", label: "Sucata / Diagrama", file: null, color: "#eab308", size: 1 }
+  ]
+};
+
+const OBJECT_IDS = new Set(CATALOG.objects);
+const INDICATOR_IDS = new Set(CATALOG.indicators);
+
+// Monta o caminho completo de qualquer sprite
+function spritePath(base, dir) {
+  const isObj = OBJECT_IDS.has(base) || INDICATOR_IDS.has(base);
+  const folder = isObj ? PATHS.objects : PATHS.tiles;
+  const name = SINGLE_ANGLE.has(base) ? `${base}.png` : `${base}_${dir}.png`;
+  return folder + name;
+}
+
+
+// Estado do editor
+let currentCat = "terrain";
+let selectedBase = "grass_block";
+let currentDir = "S";
+let currentZ = 0;
+let currentTool = "paint";
+let zoom = 0.65;
+let camX = 0;
+let camY = 140;
+let isPanning = false;
+let panStart = { x: 0, y: 0 };
+let isMouseDown = false;
+let mouseButton = 0;
+let hoverCell = null;
+
+// Mapa 3D: layers[z][y][x]
+let layers = Array.from({ length: MAX_LAYERS }, () =>
+  Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null))
+);
+
+// Cache de imagens
+const imgCache = new Map();
+function getSpriteImage(filename) {
+  if (!filename) return null;
+  if (imgCache.has(filename)) return imgCache.get(filename);
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = REPO_RAW + filename;
+  imgCache.set(filename, img);
+  return img;
+}
+
+// Métricas isométricas calibráveis (inicia em 128×64, padrão 2:1 Kenney)
+let ISO_W = 128;
+let ISO_H = 64;
+let LAYER_STEP_Y = 64;
+let spriteOffsetY = 0;
+
+function gridToScreen(gx, gy, gz) {
+  const sx = (gx - gy) * (ISO_W * 0.5) * zoom + camX;
+  const sy = (gx + gy) * (ISO_H * 0.5) * zoom - gz * LAYER_STEP_Y * zoom + camY;
+  return { x: sx, y: sy };
+}
+
+function screenToGrid(sx, sy, gz) {
+  const adjX = (sx - camX) / zoom;
+  const adjY = (sy - camY + gz * LAYER_STEP_Y * zoom) / zoom;
+  const gx = Math.floor((adjX / (ISO_W * 0.5) + adjY / (ISO_H * 0.5)) * 0.5);
+  const gy = Math.floor((adjY / (ISO_H * 0.5) - adjX / (ISO_W * 0.5)) * 0.5);
+  return { gx, gy };
+}
+
+// Controles do painel Calibração Iso (Esquerda)
+const rngIsoW = document.getElementById("rng-iso-w");
+const numIsoW = document.getElementById("num-iso-w");
+const rngIsoH = document.getElementById("rng-iso-h");
+const numIsoH = document.getElementById("num-iso-h");
+const rngLayerY = document.getElementById("rng-layer-y");
+const numLayerY = document.getElementById("num-layer-y");
+const rngOffsetY = document.getElementById("rng-offset-y");
+const numOffsetY = document.getElementById("num-offset-y");
+
+function updateCalibValues(isoW, isoH, layerY, offsetY) {
+  ISO_W = Number(isoW);
+  ISO_H = Number(isoH);
+  LAYER_STEP_Y = Number(layerY);
+  spriteOffsetY = Number(offsetY);
+  rngIsoW.value = ISO_W;
+  numIsoW.value = ISO_W;
+  rngIsoH.value = ISO_H;
+  numIsoH.value = ISO_H;
+  rngLayerY.value = LAYER_STEP_Y;
+  numLayerY.value = LAYER_STEP_Y;
+  rngOffsetY.value = spriteOffsetY;
+  numOffsetY.value = spriteOffsetY;
+}
+
+rngIsoW.addEventListener("input", () => updateCalibValues(rngIsoW.value, ISO_H, LAYER_STEP_Y, spriteOffsetY));
+numIsoW.addEventListener("input", () => updateCalibValues(numIsoW.value || 128, ISO_H, LAYER_STEP_Y, spriteOffsetY));
+rngIsoH.addEventListener("input", () => updateCalibValues(ISO_W, rngIsoH.value, LAYER_STEP_Y, spriteOffsetY));
+numIsoH.addEventListener("input", () => updateCalibValues(ISO_W, numIsoH.value || 64, LAYER_STEP_Y, spriteOffsetY));
+rngLayerY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, rngLayerY.value, spriteOffsetY));
+numLayerY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, numLayerY.value || 64, spriteOffsetY));
+rngOffsetY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, LAYER_STEP_Y, rngOffsetY.value));
+numOffsetY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, LAYER_STEP_Y, numOffsetY.value || 0));
+
+document.getElementById("btn-preset-128").addEventListener("click", () => {
+  updateCalibValues(128, 64, 64, 0);
+});
+document.getElementById("btn-preset-256").addEventListener("click", () => {
+  updateCalibValues(256, 128, 64, 0);
+});
+
+// Inicializa mapa exemplo
+function buildSampleMap() {
+  layers = Array.from({ length: MAX_LAYERS }, () =>
+    Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null))
+  );
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      let base = "grass_block";
+      let dir = "S";
+      if (x === 4) { base = "grass_path"; dir = "S"; }
+      if (y === 6) { base = "grass_river"; dir = "E"; }
+      if (x === 4 && y === 6) { base = "grass_riverBridge"; dir = "S"; }
+      layers[0][y][x] = { base, dir };
+    }
+  }
+  layers[1][1][1] = { base: "building_center", dir: "S" };
+  layers[1][1][2] = { base: "building_sides", dir: "S" };
+  layers[2][1][1] = { base: "roof_slantCornerBeige", dir: "S" };
+  layers[2][1][2] = { base: "roof_slantCornerBeige", dir: "E" };
+  layers[1][7][7] = { base: "rocks", dir: "S" };
+  layers[1][2][7] = { base: "fence_wood", dir: "W" };
+  layers[1][5][2] = {
+    isSpawn: true, base: "spawn_barge", label: "Barcaça (2×2)", color: "#f59e0b", size: 2
+  };
+}
+
+// Renderiza Paleta lateral
+const paletteEl = document.getElementById("palette-grid");
+const searchInput = document.getElementById("search-input");
+
+function renderPalette() {
+  const q = searchInput.value.trim().toLowerCase();
+  paletteEl.innerHTML = "";
+  const items = CATALOG[currentCat] || [];
+
+  items.forEach(item => {
+    const isObj = typeof item === "object";
+    const id = isObj ? item.id : item;
+    const label = isObj ? item.label : item;
+    if (q && !label.toLowerCase().includes(q)) return;
+
+    const card = document.createElement("div");
+    card.className = "tile-card" + (selectedBase === id ? " selected" : "");
+
+    if (isObj && !item.file) {
+      const badge = document.createElement("div");
+      badge.style.cssText = `width:52px;height:52px;border-radius:8px;background:${item.color}33;border:2px solid ${item.color};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:${item.color};`;
+      badge.textContent = item.size === 2 ? "2×2" : "1×1";
+      card.appendChild(badge);
+    } else {
+      const filename = isObj ? item.file : spritePath(item, currentDir);
+      const img = document.createElement("img");
+      img.src = REPO_RAW + filename;
+      img.alt = label;
+      img.onerror = () => { img.style.opacity = "0.25"; };
+      card.appendChild(img);
+    }
+
+    const span = document.createElement("span");
+    span.textContent = label;
+    card.appendChild(span);
+
+    card.onclick = () => {
+      selectedBase = id;
+      setTool("paint");
+      renderPalette();
+    };
+    paletteEl.appendChild(card);
+  });
+}
+
+// Canvas e Loop de Desenho
+const canvas = document.getElementById("iso-canvas");
+const ctx = canvas.getContext("2d");
+
+function resizeCanvas() {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width;
+  canvas.height = rect.height;
+  if (camX === 0) camX = canvas.width * 0.5;
+}
+window.addEventListener("resize", resizeCanvas);
+
+function drawDiamond(cx, cy, w, h, stroke, fill) {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - h * 0.5);
+  ctx.lineTo(cx + w * 0.5, cy);
+  ctx.lineTo(cx, cy + h * 0.5);
+  ctx.lineTo(cx - w * 0.5, cy);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
+}
+
+function drawTileCell(cell, gx, gy, gz, alpha = 1) {
+  const { x, y } = gridToScreen(gx, gy, gz);
+  const w = ISO_W * zoom;
+  const h = ISO_H * zoom;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  if (cell.isSpawn) {
+    const scale = cell.size || 1;
+    drawDiamond(
+      x,
+      y + (scale - 1) * h * 0.5,
+      w * scale,
+      h * scale,
+      cell.color,
+      cell.color + "44"
+    );
+    if (cell.file) {
+      const img = getSpriteImage(cell.file);
+      if (img && img.complete && img.naturalWidth > 0) {
+        const sw = 128 * zoom * scale;
+        const sh = 128 * zoom * scale;
+        ctx.drawImage(img, x - sw * 0.5, y - sh * 0.65 + spriteOffsetY * zoom, sw, sh);
+      }
+    }
+    ctx.fillStyle = "#fff";
+    ctx.font = `bold ${Math.max(9, Math.round(12 * zoom * 1.4))}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillText(cell.label, x, y + 4);
+  } else {
+    const filename = spritePath(cell.base, cell.dir);
+    const img = getSpriteImage(filename);
+    if (img && img.complete && img.naturalWidth > 0) {
+      const drawW = 256 * zoom;
+      const drawH = 352 * zoom;
+      ctx.drawImage(
+        img,
+        x - drawW * 0.5,
+        y + h * 0.5 + spriteOffsetY * zoom - drawH,
+        drawW,
+        drawH
+      );
+    } else {
+      drawDiamond(x, y, w, h, "#38bdf8", "rgba(56, 189, 248, 0.2)");
+    }
+  }
+
+  ctx.restore();
+}
+
+function renderLoop() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const xray = document.getElementById("chk-xray").checked;
+  const showGrid = document.getElementById("chk-grid").checked;
+
+  for (let z = 0; z < MAX_LAYERS; z++) {
+    const isAbove = z > currentZ;
+    if (isAbove && !xray) continue;
+    const alpha = isAbove ? 0.22 : (z < currentZ ? 0.85 : 1.0);
+
+    for (let sum = 0; sum <= (GRID_SIZE - 1) * 2; sum++) {
+      for (let gx = 0; gx < GRID_SIZE; gx++) {
+        const gy = sum - gx;
+        if (gy < 0 || gy >= GRID_SIZE) continue;
+
+        const cell = layers[z][gy][gx];
+        if (cell) {
+          drawTileCell(cell, gx, gy, z, alpha);
+        }
+
+        if (z === currentZ && showGrid) {
+          const { x, y } = gridToScreen(gx, gy, z);
+          drawDiamond(x, y, ISO_W * zoom, ISO_H * zoom, "rgba(148, 163, 184, 0.22)", null);
+        }
+      }
+    }
+  }
+
+  if (hoverCell && hoverCell.gx >= 0 && hoverCell.gx < GRID_SIZE && hoverCell.gy >= 0 && hoverCell.gy < GRID_SIZE) {
+    const { gx, gy } = hoverCell;
+    const { x, y } = gridToScreen(gx, gy, currentZ);
+    if (currentTool === "erase") {
+      drawDiamond(x, y, ISO_W * zoom, ISO_H * zoom, "#ef4444", "rgba(239, 68, 68, 0.35)");
+    } else if (currentTool === "pick") {
+      drawDiamond(x, y, ISO_W * zoom, ISO_H * zoom, "#eab308", "rgba(234, 179, 8, 0.3)");
+    } else {
+      const spawnObj = CATALOG.spawns.find(s => s.id === selectedBase);
+      const previewCell = spawnObj
+        ? { isSpawn: true, base: spawnObj.id, label: spawnObj.label, color: spawnObj.color, size: spawnObj.size, file: spawnObj.file }
+        : { base: selectedBase, dir: currentDir };
+      drawTileCell(previewCell, gx, gy, currentZ, 0.65);
+      drawDiamond(x, y, ISO_W * zoom, ISO_H * zoom, "#38bdf8", null);
+    }
+  }
+
+  requestAnimationFrame(renderLoop);
+}
+
+// Aplicação de ferramenta na célula
+function applyToolAt(gx, gy) {
+  if (gx < 0 || gx >= GRID_SIZE || gy < 0 || gy >= GRID_SIZE) return;
+  if (currentTool === "erase" || mouseButton === 2) {
+    layers[currentZ][gy][gx] = null;
+    return;
+  }
+  if (currentTool === "pick") {
+    const existing = layers[currentZ][gy][gx];
+    if (existing) {
+      selectedBase = existing.base;
+      if (existing.dir) {
+        currentDir = existing.dir;
+        document.getElementById("dir-label").textContent = currentDir;
+      }
+      setTool("paint");
+      renderPalette();
+    }
+    return;
+  }
+  const spawnObj = CATALOG.spawns.find(s => s.id === selectedBase);
+  if (spawnObj) {
+    layers[currentZ][gy][gx] = {
+      isSpawn: true,
+      base: spawnObj.id,
+      label: spawnObj.label,
+      color: spawnObj.color,
+      size: spawnObj.size,
+      file: spawnObj.file
+    };
+  } else {
+  const cell = { base: selectedBase, dir: currentDir };
+  if (OBJECT_IDS.has(selectedBase)) cell.interactive = true;
+  if (INDICATOR_IDS.has(selectedBase)) { cell.indicator = true; cell.collision = false; }
+  layers[currentZ][gy][gx] = cell;
+  }
+}
+
+// Eventos do Mouse no Canvas
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+canvas.addEventListener("mousedown", e => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    isPanning = true;
+    panStart = { x: mx - camX, y: my - camY };
+    return;
+  }
+  isMouseDown = true;
+  mouseButton = e.button;
+  const cell = screenToGrid(mx, my, currentZ);
+  applyToolAt(cell.gx, cell.gy);
+});
+
+canvas.addEventListener("mousemove", e => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  if (isPanning) {
+    camX = mx - panStart.x;
+    camY = my - panStart.y;
+    return;
+  }
+  hoverCell = screenToGrid(mx, my, currentZ);
+  if (isMouseDown) {
+    applyToolAt(hoverCell.gx, hoverCell.gy);
+  }
+});
+
+window.addEventListener("mouseup", () => {
+  isMouseDown = false;
+  isPanning = false;
+});
+
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.12 : 0.89;
+  zoom = Math.min(1.8, Math.max(0.18, zoom * factor));
+}, { passive: false });
+
+// Controles da UI e Atalhos
+function setTool(t) {
+  currentTool = t;
+  document.getElementById("tool-paint").classList.toggle("active", t === "paint");
+  document.getElementById("tool-erase").classList.toggle("active", t === "erase");
+  document.getElementById("tool-pick").classList.toggle("active", t === "pick");
+}
+
+function setLayer(z) {
+  currentZ = Math.max(0, Math.min(MAX_LAYERS - 1, z));
+  document.getElementById("layer-label").textContent = currentZ;
+  document.querySelectorAll("#layer-btns button").forEach(btn => {
+    btn.classList.toggle("active", Number(btn.dataset.z) === currentZ);
+  });
+}
+
+function rotateDir() {
+  const idx = (DIRS.indexOf(currentDir) + 1) % DIRS.length;
+  currentDir = DIRS[idx];
+  document.getElementById("dir-label").textContent = currentDir;
+  renderPalette();
+}
+
+document.getElementById("tool-paint").onclick = () => setTool("paint");
+document.getElementById("tool-erase").onclick = () => setTool("erase");
+document.getElementById("tool-pick").onclick = () => setTool("pick");
+document.getElementById("btn-rotate").onclick = rotateDir;
+
+document.getElementById("btn-fill-layer").onclick = () => {
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      applyToolAt(x, y);
+    }
+  }
+};
+
+document.getElementById("btn-sample").onclick = buildSampleMap;
+document.getElementById("btn-clear").onclick = () => {
+  layers = Array.from({ length: MAX_LAYERS }, () =>
+    Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null))
+  );
+};
+
+document.getElementById("btn-zoom-in").onclick = () => { zoom = Math.min(1.8, zoom * 1.15); };
+document.getElementById("btn-zoom-out").onclick = () => { zoom = Math.max(0.18, zoom * 0.87); };
+
+document.querySelectorAll("#layer-btns button").forEach(btn => {
+  btn.onclick = () => setLayer(Number(btn.dataset.z));
+});
+
+document.querySelectorAll("#cat-tabs button").forEach(btn => {
+  btn.onclick = () => {
+    currentCat = btn.dataset.cat;
+    document.querySelectorAll("#cat-tabs button").forEach(b => b.classList.toggle("active", b === btn));
+    renderPalette();
+  };
+});
+
+searchInput.addEventListener("input", renderPalette);
+
+window.addEventListener("keydown", e => {
+  const tag = document.activeElement.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || document.getElementById("json-modal").classList.contains("open")) return;
+  const k = e.key.toLowerCase();
+  if (k === "r") rotateDir();
+  if (k === "x") setTool("erase");
+  if (k === "b" || k === "p") setTool("paint");
+  if (k === "i") setTool("pick");
+  if (["1", "2", "3", "4", "5"].includes(k)) setLayer(Number(k) - 1);
+});
+
+// Modal Exportar / Importar JSON
+const modal = document.getElementById("json-modal");
+const textarea = document.getElementById("json-textarea");
+
+document.getElementById("btn-export").onclick = () => {
+  const payload = {
+    version: 1,
+    gridSize: GRID_SIZE,
+    maxLayers: MAX_LAYERS,
+    repoBase: REPO_RAW,
+    isoMetrics: {
+      ISO_W,
+      ISO_H,
+      LAYER_STEP_Y,
+      spriteOffsetY
+    },
+    layers
+  };
+  textarea.value = JSON.stringify(payload, null, 2);
+  modal.classList.add("open");
+};
+
+document.getElementById("btn-close-modal").onclick = () => modal.classList.remove("open");
+
+document.getElementById("btn-copy-json").onclick = () => {
+  textarea.select();
+  document.execCommand("copy");
+  alert("JSON copiado para a área de transferência!");
+};
+
+document.getElementById("btn-download-json").onclick = () => {
+  const blob = new Blob([textarea.value], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "mecha_barge_level_10x10.json";
+  a.click();
+};
+
+document.getElementById("btn-import-json").onclick = () => {
+  try {
+    const parsed = JSON.parse(textarea.value);
+    if (!parsed.layers || !Array.isArray(parsed.layers)) throw new Error("Formato inválido");
+    layers = parsed.layers;
+    if (parsed.isoMetrics) {
+      updateCalibValues(
+        parsed.isoMetrics.ISO_W ?? 128,
+        parsed.isoMetrics.ISO_H ?? 64,
+        parsed.isoMetrics.LAYER_STEP_Y ?? 64,
+        parsed.isoMetrics.spriteOffsetY ?? 0
+      );
+    }
+    modal.classList.remove("open");
+  } catch (err) {
+    alert("Erro ao ler JSON: " + err.message);
+  }
+};
+
+// Boot
+resizeCanvas();
+buildSampleMap();
+renderPalette();
+renderLoop();
+</script>
+</body>
+</html>
