@@ -1,86 +1,164 @@
+import { R, nearBase } from "./utils.js";
+
+// Ajuste os nomes caso seus sprites sejam diferentes
+const T = {
+  ground: "grass_block",
+  water: "grass_water",          // borda reta (lado com terra)
+  waterFull: "water",            // água interna (troque se não existir)
+  convex: "grass_waterConvex",   // canto externo
+  concave: "grass_waterConcave", // canto interno
+  river: "grass_river",
+  bend: "grass_riverBend",
+  bridge: "grass_riverBridge",
+  waterRiver: "grass_waterRiver",
+  mountain: "grass_block"        // bloco empilhado nas montanhas
+};
+
+const DIRS = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+const MAX_LEVELS = 4;
+
 export async function loadBase() {
-  const r = await fetch(encodeURI("./Basic Start.json"));
-  if (!r.ok) throw new Error("Basic Start.json não encontrado");
-  return r.json();
-}
+  const w = 100, h = 60;
+  const layers = Array.from({ length: MAX_LEVELS }, () =>
+    Array.from({ length: h }, () => Array(w).fill(null))
+  );
+  const inside = (x, y) => x >= 0 && x < w && y >= 0 && y < h;
 
-// RNG com seed: todos os jogadores geram o mesmo mapa
-function rng(a) {
-  return () => {
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    let t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-
-function analyze(base) {
-  const cells = [], spawns = [];
-  let barge = null, maxX = 0, maxY = 0;
-  base.layers.forEach((L, z) => L.forEach((row, y) => row.forEach((c, x) => {
-    if (!c) return;
-    const s = c.size || 1;
-    maxX = Math.max(maxX, x + s); maxY = Math.max(maxY, y + s);
-    if (c.base === "mech_Watcher") spawns.push({ x: x + s / 2, y: y + s / 2, s });
-    else if (c.base === "spawn_barge") barge = { x: x + s / 2, y: y + s / 2 };
-    else if (!c.isSpawn) cells.push({ x, y, z, c });
-  })));
-  return { cells, spawns, barge: barge || { x: maxX / 2, y: maxY / 2 }, bw: maxX, bh: maxY };
-}
-
-export function generateMap(base, players, seed) {
-  const R = rng(seed), A = analyze(base), two = players > 4;
-  const w = two ? 100 : 60, h = 60, LC = Math.max(5, base.layers.length);
-  const layers = Array.from({ length: LC }, () => Array.from({ length: h }, () => Array(w).fill(null)));
-  const reserved = new Set(), K = (x, y) => x + "," + y;
-  const centers = two ? [[25, 30], [75, 30]] : [[30, 30]];
-
-  const bases = centers.map(([cx, cy]) => {
-    const ox = cx - Math.floor(A.bw / 2), oy = cy - Math.floor(A.bh / 2);
-    A.cells.forEach(({ x, y, z, c }) => {
-      layers[z][oy + y][ox + x] = { base: c.base, dir: c.dir || "S" };
-      reserved.add(K(ox + x, oy + y));
-    });
-    const foot = (fx, fy, s) => { for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) reserved.add(K(Math.floor(fx) + dx, Math.floor(fy) + dy)); };
-    const spawns = A.spawns.map(s => { foot(ox + s.x - s.s / 2, oy + s.y - s.s / 2, s.s); return { x: ox + s.x, y: oy + s.y }; });
-    const bx = ox + A.barge.x, by = oy + A.barge.y;
-    foot(bx - 3, by - 3, 6); // espaço para a barcaça crescer
-    return { cx, cy, spawns, barge: { x: bx, y: by } };
-  });
-
-  const nearBase = (x, y, r) => bases.some(b => Math.hypot(x - b.cx, y - b.cy) < r);
-  const D = ["N", "E", "S", "W"];
-
-  // Lagos
-  for (let i = 0; i < (two ? 10 : 6); i++) {
-    const lx = 4 + R() * (w - 8), ly = 4 + R() * (h - 8), r = 2 + R() * 3;
+  // 1. Máscara de água (lagos)
+  const water = Array.from({ length: h }, () => Array(w).fill(false));
+  for (let i = 0; i < 6; i++) {
+    const lx = 6 + R() * (w - 12), ly = 6 + R() * (h - 12), r = 2.5 + R() * 3;
     if (nearBase(lx, ly, 14)) continue;
-    for (let y = Math.floor(ly - r); y <= ly + r; y++)
-      for (let x = Math.floor(lx - r); x <= lx + r; x++)
-        if (x >= 0 && y >= 0 && x < w && y < h && Math.hypot(x - lx, y - ly) < r)
-          layers[0][y][x] = { base: "grass_water", dir: "S" };
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++)
+        if (Math.hypot(x - lx, y - ly) < r) water[y][x] = true;
   }
 
-  // Preenche só o que não é da base
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    if (reserved.has(K(x, y))) continue;
-    if (!layers[0][y][x]) layers[0][y][x] = { base: "grass_block", dir: "S" };
-    if (layers[0][y][x].base !== "grass_block" || nearBase(x, y, 8)) continue;
-    const r = R();
-    if (r < 0.03) layers[1][y][x] = { base: "rocks", dir: D[R() * 4 | 0] };
-    else if (r < 0.045) layers[1][y][x] = { base: "fence_wood", dir: D[R() * 4 | 0] };
-    else if (r < 0.05) {
-      layers[1][y][x] = { base: "building_center", dir: "S" };
-      layers[2][y][x] = { base: "roof_slantCornerBeige", dir: D[R() * 4 | 0] };
+  // 2. Rio (só passos ortogonais, para os tiles encaixarem)
+  const river = gerarRio(w, h);
+  const riverSet = new Set(river.map(([x, y]) => `${x},${y}`));
+  const isRiver = (x, y) => riverSet.has(`${x},${y}`);
+  const isWater = (x, y) => inside(x, y) && water[y][x];
+
+  // 3. Chão + autotile da água
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      layers[0][y][x] = water[y][x] && !isRiver(x, y)
+        ? autotileAgua(x, y, isWater)
+        : { base: T.ground, dir: "S" };
     }
   }
 
-  const solid = new Set(), upper = [];
-  layers.forEach((L, z) => L.forEach((row, y) => row.forEach((c, x) => {
-    if (!c) return;
-    if (z === 0) { if (/^grass_(water|river(?!Bridge))/.test(c.base)) solid.add(K(x, y)); }
-    else { upper.push({ x, y, z, c }); if (!/stairs|slope/.test(c.base)) solid.add(K(x, y)); }
-  })));
+  // 4. Tiles do rio
+  river.forEach(([x, y], i) => {
+    if (water[y][x]) return; // dentro do lago o rio some
+    const prev = river[i - 1], next = river[i + 1];
+    const touchesLake = Object.values(DIRS).some(([dx, dy]) => isWater(x + dx, y + dy));
+    layers[0][y][x] = touchesLake
+      ? { base: T.waterRiver, dir: dirTo([x, y], prev || next) }
+      : tileRio([x, y], prev, next);
+  });
 
-  return { w, h, layers, solid, upper, bases };
+  // 5. Pontes apenas em trechos retos
+  const retos = river.filter(([x, y]) => layers[0][y][x]?.base === T.river);
+  for (let i = 0; i < Math.max(1, Math.floor(retos.length / 30)); i++) {
+    const [bx, by] = retos[Math.floor(R() * retos.length)];
+    layers[0][by][bx] = { ...layers[0][by][bx], base: T.bridge };
+  }
+
+  // 6. Montanhas com níveis sobrepostos
+  gerarMontanhas(layers, w, h, (x, y) => water[y][x] || isRiver(x, y));
+
+  return {
+    w, h, layers,
+    isoMetrics: { ISO_W: 220, ISO_H: 110, LAYER_STEP_Y: 114, spriteOffsetY: 118 }
+  };
+}
+
+function autotileAgua(x, y, isWater) {
+  const land = d => !isWater(x + DIRS[d][0], y + DIRS[d][1]);
+  const n = land("N"), e = land("E"), s = land("S"), wv = land("W");
+
+  // canto externo: duas laterais vizinhas com terra
+  if (n && e) return { base: T.convex, dir: "N" };
+  if (e && s) return { base: T.convex, dir: "E" };
+  if (s && wv) return { base: T.convex, dir: "S" };
+  if (wv && n) return { base: T.convex, dir: "W" };
+  // borda reta
+  if (n) return { base: T.water, dir: "N" };
+  if (e) return { base: T.water, dir: "E" };
+  if (s) return { base: T.water, dir: "S" };
+  if (wv) return { base: T.water, dir: "W" };
+  // canto interno: só a diagonal tem terra
+  if (!isWater(x + 1, y - 1)) return { base: T.concave, dir: "N" };
+  if (!isWater(x + 1, y + 1)) return { base: T.concave, dir: "E" };
+  if (!isWater(x - 1, y + 1)) return { base: T.concave, dir: "S" };
+  if (!isWater(x - 1, y - 1)) return { base: T.concave, dir: "W" };
+  return { base: T.waterFull, dir: "S" };
+}
+
+function dirTo([x, y], p) {
+  if (!p) return "S";
+  const dx = p[0] - x, dy = p[1] - y;
+  return dx > 0 ? "E" : dx < 0 ? "W" : dy < 0 ? "N" : "S";
+}
+
+function tileRio(c, prev, next) {
+  const a = dirTo(c, prev), b = dirTo(c, next);
+  const vert = d => d === "N" || d === "S";
+  if (!prev || !next || vert(a) === vert(b)) {
+    return { base: T.river, dir: vert(a) ? "N" : "E" };
+  }
+  const key = [a, b].sort().join("");
+  const bendDir = { EN: "N", ES: "E", SW: "S", NW: "W" }[key];
+  return { base: T.bend, dir: bendDir };
+}
+
+function gerarRio(w, h) {
+  const horizontal = R() < 0.5;
+  let x = horizontal ? 0 : Math.floor(w * (0.2 + R() * 0.6));
+  let y = horizontal ? Math.floor(h * (0.2 + R() * 0.6)) : 0;
+  const path = [[x, y]];
+  let lastSide = 0;
+
+  while (horizontal ? x < w - 1 : y < h - 1) {
+    if (R() < 0.3) {
+      // desvio lateral, evitando ir e voltar em seguida
+      const side = lastSide || (R() < 0.5 ? -1 : 1);
+      const nx = horizontal ? x : x + side;
+      const ny = horizontal ? y + side : y;
+      if (nx > 1 && nx < w - 2 && ny > 1 && ny < h - 2) {
+        x = nx; y = ny; lastSide = side;
+        path.push([x, y]);
+        continue;
+      }
+    }
+    lastSide = 0;
+    horizontal ? x++ : y++;
+    path.push([x, y]);
+  }
+  return path;
+}
+
+function gerarMontanhas(layers, w, h, bloqueado) {
+  const height = Array.from({ length: h }, () => Array(w).fill(0));
+
+  for (let i = 0; i < 5; i++) {
+    const cx = R() * w, cy = R() * h, r = 4 + R() * 5;
+    const peak = 1 + Math.floor(R() * (MAX_LEVELS - 1));
+    if (nearBase(cx, cy, 16)) continue;
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const d = Math.hypot(x - cx, y - cy);
+        if (d < r) height[y][x] = Math.max(height[y][x], Math.ceil(peak * (1 - d / r)));
+      }
+  }
+
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      if (bloqueado(x, y) || nearBase(x, y, 6)) continue;
+      for (let L = 1; L <= height[y][x] && L < MAX_LEVELS; L++) {
+        layers[L][y][x] = { base: T.mountain, dir: "S" };
+      }
+    }
 }
