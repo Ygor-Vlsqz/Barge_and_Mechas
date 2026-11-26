@@ -1011,10 +1011,10 @@ document.getElementById("btn-import-json").onclick = () => {
     layers = parsed.layers;
     if (parsed.isoMetrics) {
       updateCalibValues(
-        parsed.isoMetrics.ISO_W ?? 128,
-        parsed.isoMetrics.ISO_H ?? 64,
-        parsed.isoMetrics.LAYER_STEP_Y ?? 64,
-        parsed.isoMetrics.spriteOffsetY ?? 0
+        parsed.isoMetrics.ISO_W ?? 220,
+        parsed.isoMetrics.ISO_H ?? 110,
+        parsed.isoMetrics.LAYER_STEP_Y ?? 114,
+        parsed.isoMetrics.spriteOffsetY ?? 118
       );
     }
     modal.classList.remove("open");
