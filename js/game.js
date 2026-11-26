@@ -392,3 +392,457 @@ function updatePlayer(p, dt) {
   // Pulo
   if (inM && i.special && L("jump") && p.z <= 0) p.vz = 5 + L("jump") * 0.8;
   if (p.z > 0 || p.vz) {
+    p.vz -= 18 * dt; p.z += p.vz * dt;
+    if (p.z <= 0) { if (blocked(p.x, p.y, MW, false)) { p.z = 0.05; p.vz = 3; } else { p.z = 0; p.vz = 0; } }
+  }
+  const air = inM && p.z > 0.15;
+  const spd = (inM ? st.spd : 3.2) * (p.tow ? 0.75 : 1);
+  if (Math.hypot(i.mx || 0, i.my || 0) > 0.05) { move(a, i.mx * spd * dt, i.my * spd * dt, w, air); a.ang = Math.atan2(i.my, i.mx); }
+
+  const auto = nearestEnemy(a, 10);
+  p.aim = (i.ax != null && (i.ax || i.ay)) ? Math.atan2(i.ay, i.ax) : auto ? Math.atan2(auto.y - a.y, auto.x - a.x) : (a.ang || 0);
+
+  if (inM && L("regen") && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + 1.5 * L("regen") * dt);
+
+  p.cd -= dt;
+  if (i.fire && p.cd <= 0) {
+    const n = inM ? st.shots : 1;
+    for (let k = 0; k < n; k++) {
+      const an = p.aim + (k - (n - 1) / 2) * 0.12;
+      G.shots.push({ x: a.x + Math.cos(an) * 0.8, y: a.y + Math.sin(an) * 0.8, vx: Math.cos(an) * 16, vy: Math.sin(an) * 16,
+        dmg: inM ? st.dmg : 6, f: "p", life: 0.9 });
+    }
+    p.cd = inM ? st.rof : 0.35;
+  }
+
+  if (i.pickup && inM && !p.tow) {
+    const c = G.carcasses.find(c => !c.by && Math.hypot(c.x - a.x, c.y - a.y) < 2);
+    if (c) { c.by = p.id; p.tow = c.id; }
+  }
+  if (i.drop) dropTow(p);
+  if (p.tow) {
+    const c = G.carcasses.find(c => c.id === p.tow);
+    if (!c) p.tow = null;
+    else { const k = Math.min(1, 8 * dt); c.x += (a.x - Math.cos(a.ang) * 1.5 - c.x) * k; c.y += (a.y - Math.sin(a.ang) * 1.5 - c.y) * k; }
+  }
+  // Astronauta perto da barcaça faz reparo
+  if (!inM) { const b = nearBarge(a, 1.2); if (b) b.hp = Math.min(b.maxHp, b.hp + 12 * dt); }
+
+  EDGES.forEach(k => i[k] = 0);
+}
+
+function respawnPilot(p) {
+  const b = G.barges[p.base];
+  Object.assign(p.pilot, { x: b.x, y: b.y + b.size / 2 + 0.6, hp: PMAX });
+  fixPos(p.pilot, PW); p.mode = "pilot"; p.respawn = 0;
+}
+
+function hurt(t, amt) {
+  if (t.k !== "barge" && S.dev.god) return;
+  fx(t.x, t.y, Math.round(amt), "#fca5a5");
+  if (t.k === "barge") { t.ref.hp -= amt; if (t.ref.hp <= 0) gameOver(); return; }
+  const p = t.p;
+  if (t.k === "mecha") {
+    p.hp -= amt;
+    if (p.hp <= 0) {
+      p.hp = 0; p.wreck = 12; p.mode = "pilot"; dropTow(p);
+      Object.assign(p.pilot, { x: p.x, y: p.y + 1.2 }); fixPos(p.pilot, PW);
+      say(`💥 Mecha de ${p.name} destruído! Reinicia em 12s`, "#f87171");
+    }
+  } else {
+    p.pilot.hp -= amt;
+    if (p.pilot.hp <= 0) { p.respawn = 8; say(`☠️ ${p.name} caiu. Renasce na barcaça em 8s`, "#f87171"); }
+  }
+}
+
+function updateBarges(dt) {
+  G.barges.forEach((b, bi) => {
+    const n = G.players.filter(p => p.base === bi).length;
+    b.size = Math.min(5, 2 + Math.floor(n / 2)); // cresce/encolhe com os jogadores
+    b.maxHp = 500 + 100 * L("barge");
+    if (L("turret") && (b.cd -= dt) <= 0) {
+      const e = nearestEnemy(b, 8);
+      if (e) {
+        const an = Math.atan2(e.y - b.y, e.x - b.x);
+        G.shots.push({ x: b.x, y: b.y, vx: Math.cos(an) * 14, vy: Math.sin(an) * 14, dmg: 8 * L("turret"), f: "p", life: 0.8 });
+        b.cd = 0.7;
+      }
+    }
+    G.players.forEach(p => { pushOut(p, b); pushOut(p.pilot, b); });
+  });
+}
+
+function spawnEnemy() {
+  const b = G.barges[Math.random() * G.barges.length | 0];
+  for (let k = 0; k < 20; k++) {
+    const an = Math.random() * 6.283, d = 18 + Math.random() * 8;
+    const x = Math.max(1.5, Math.min(MAP.w - 1.5, b.x + Math.cos(an) * d));
+    const y = Math.max(1.5, Math.min(MAP.h - 1.5, b.y + Math.sin(an) * d));
+    if (blocked(x, y, 1, false)) continue;
+    const sc = 1 + (G.wave - 1) * 0.22, side = Math.random() < 0.5 ? 1 : -1;
+    const gun = Math.random() < Math.min(0.45, 0.15 + G.wave * 0.05);
+    G.enemies.push(gun
+      ? { type: "gunner", x, y, w: 1, hp: 70 * sc, maxHp: 70 * sc, spd: 1.8, range: 6.5, dmg: 8 * sc, cd: 1, side }
+      : { type: "crawler", x, y, w: 0.8, hp: 42 * sc, maxHp: 42 * sc, spd: 2.8 + Math.min(1, G.wave * 0.08), range: 0.4, dmg: 10 * sc, cd: 0.5, side });
+    return;
+  }
+}
+
+function updateEnemy(e, dt) {
+  let t = null, bd = 1e9;
+  for (const c of G._t) { const d = Math.hypot(c.x - e.x, c.y - e.y) - c.r; if (d < bd) { bd = d; t = c; } }
+  if (!t) return;
+  const dx = t.x - e.x, dy = t.y - e.y, d = Math.hypot(dx, dy) || 1;
+  e.ang = Math.atan2(dy, dx); e.cd -= dt;
+  if (bd > e.range) {
+    const ox = e.x, oy = e.y, s = e.spd * dt;
+    move(e, dx / d * s, dy / d * s, e.w, false);
+    if (Math.abs(e.x - ox) + Math.abs(e.y - oy) < 1e-4) move(e, -dy / d * s * e.side, dx / d * s * e.side, e.w, false);
+  } else if (e.cd <= 0) {
+    if (e.type === "gunner") { G.shots.push({ x: e.x, y: e.y, vx: dx / d * 9, vy: dy / d * 9, dmg: e.dmg, f: "e", life: 1.2 }); e.cd = 1.6; }
+    else { hurt(t, e.dmg); e.cd = 0.9; }
+  }
+}
+
+function updateShots(dt) {
+  G.shots = G.shots.filter(s => {
+    s.x += s.vx * dt; s.y += s.vy * dt;
+    if ((s.life -= dt) <= 0 || MAP.solid.has(Math.floor(s.x) + "," + Math.floor(s.y))) return false;
+    if (s.f === "p") {
+      const e = G.enemies.find(e => Math.hypot(e.x - s.x, e.y - s.y) < e.w / 2 + 0.25);
+      if (e) { const d = S.dev.oneshot ? e.hp : s.dmg; e.hp -= d; fx(e.x, e.y, Math.round(d), "#fde047"); return false; }
+    } else {
+      const t = G._t.find(t => Math.hypot(t.x - s.x, t.y - s.y) < t.r + 0.2);
+      if (t) { hurt(t, s.dmg); return false; }
+    }
+    return true;
+  });
+  G.enemies = G.enemies.filter(e => {
+    if (e.hp > 0) return true;
+    G.carcasses.push({ id: G.nid++, x: e.x, y: e.y, by: null });
+    if (Math.random() < 0.07) G.pickups.push({ id: G.nid++, x: e.x + 0.4, y: e.y });
+    return false;
+  });
+}
+
+function updateLoot(dt) {
+  G.pickups = G.pickups.filter(k => {
+    const hit = G.players.some(p => { const a = p.mode === "mecha" ? p : p.pilot; return p.respawn <= 0 && Math.hypot(a.x - k.x, a.y - k.y) < 1.1; });
+    if (hit) { G.loot.diag++; onBlueprint(); }
+    return !hit;
+  });
+  const mr = L("magnet") ? 1.5 + L("magnet") * 1.5 : 0;
+  G.carcasses = G.carcasses.filter(c => {
+    for (const b of G.barges) {
+      const d = Math.hypot(c.x - b.x, c.y - b.y) || 0.01, edge = b.size / 2;
+      if (d < edge + (c.by ? 1.4 : 0.9)) {
+        G.loot.mat += 10;
+        const t = G.players.find(p => p.tow === c.id); if (t) t.tow = null;
+        say("📦 Carcaça processada +10 Mat", "#6ee7b7");
+        return false;
+      }
+      if (!c.by && mr && d < edge + mr) { c.x += (b.x - c.x) / d * 3 * dt; c.y += (b.y - c.y) / d * 3 * dt; }
+    }
+    return true;
+  });
+}
+
+function onBlueprint() {
+  const pool = UPG.filter(u => !G.lvl[u.id]);
+  if (!pool.length) { G.loot.mat += 25; return say("📘 Diagrama convertido em 25 Mat"); }
+  let r = Math.random() * pool.reduce((s, u) => s + u.w, 0);
+  const u = pool.find(u => (r -= u.w) < 0) || pool[0];
+  if (u.parts) {
+    G.parts[u.id] = (G.parts[u.id] || 0) + 1;
+    if (G.parts[u.id] >= u.parts) { G.lvl[u.id] = 1; say(`⭐ ${u.name} desbloqueado!`, "#c084fc"); }
+    else say(`🧩 Parte de ${u.name} (${G.parts[u.id]}/${u.parts})`, "#c084fc");
+  } else { G.lvl[u.id] = 1; say(`📘 ${u.name} desbloqueado!`, "#c084fc"); }
+}
+
+function buy(id) {
+  const u = UPG.find(x => x.id === id), l = G.lvl[id] || 0;
+  if (!u || !l || l >= u.max || G.loot.mat < u.cost * l) return;
+  G.loot.mat -= u.cost * l; G.lvl[id] = l + 1;
+  if (id === "hull") G.players.forEach(p => p.hp += 40);
+  if (id === "barge") G.barges.forEach(b => b.hp += 100);
+  say(`⬆️ ${u.name} Nv.${l + 1}`, "#7dd3fc");
+}
+
+// ===================== WAVES / VOTAÇÃO =====================
+function startWave(n) {
+  G.wave = n; G.phase = "combat"; G.spawnT = 1;
+  G.toSpawn = Math.round((5 + n * 3) * (0.6 + 0.4 * G.players.length));
+  say(`⚠️ Onda ${n} iniciada!`, "#fbbf24");
+}
+function updateWaves(dt) {
+  if (G.phase === "prep") { if ((G.timer -= dt) <= 0) startWave(G.wave + 1); }
+  else if (G.phase === "combat") {
+    if (G.toSpawn > 0 && (G.spawnT -= dt) <= 0) { spawnEnemy(); G.toSpawn--; G.spawnT = Math.max(0.25, 1.1 - G.wave * 0.05); }
+    if (G.toSpawn === 0 && !G.enemies.length) {
+      if (G.wave % 3 === 0) { G.phase = "vote"; G.timer = 45; G.votes = {}; say("🗳️ Pausa longa: votem para ficar ou extrair", "#fbbf24"); }
+      else { G.phase = "prep"; G.timer = 6; say(`✅ Onda ${G.wave} limpa`, "#6ee7b7"); }
+    }
+  } else if (G.phase === "vote") { if ((G.timer -= dt) <= 0) endVote(); }
+}
+function handleVote(id, c) {
+  if (!G || G.phase !== "vote") return;
+  if (c === "leave") {
+    if (id === S.myId) return hostEnd();
+    const p = G.players.find(p => p.id === id); if (!p) return;
+    const n = G.players.length, sh = { mat: Math.floor(G.loot.mat / n), diag: Math.floor(G.loot.diag / n) };
+    G.loot.mat -= sh.mat; G.loot.diag -= sh.diag;
+    dropTow(p); G.players = G.players.filter(q => q !== p);
+    Net.sendTo(id, { t: "extracted", ...sh });
+    say(`🚀 ${p.name} extraiu com ${sh.mat} Mat`, "#fbbf24");
+  } else G.votes[id] = "stay";
+  if (G.players.every(p => G.votes[p.id])) endVote();
+}
+function endVote() { G.phase = "prep"; G.timer = 4; say("Todos ficaram. Próxima onda!", "#7dd3fc"); }
+
+function hostEnd() {
+  if (!G || G.ending) return;
+  G.ending = true;
+  say("⚠️ O host está encerrando a partida. Fim em 5s, o loot será dividido.", "#fbbf24");
+  Net.broadcast({ t: "hostEnding" });
+  setTimeout(() => {
+    const n = G.players.length || 1, sh = { mat: Math.floor(G.loot.mat / n), diag: Math.floor(G.loot.diag / n) };
+    G.players.forEach(p => p.id !== S.myId && Net.sendTo(p.id, { t: "extracted", ...sh }));
+    G.over = true; extracted(sh);
+  }, S.online ? 5000 : 0);
+}
+function gameOver() {
+  if (G.over) return; G.over = true;
+  const m = { t: "end", title: "💀 Barcaça destruída", desc: `Loot perdido. Ondas: ${G.wave}` };
+  Net.broadcast(m); showEnd(m.title, m.desc);
+}
+
+// ===================== DEV =====================
+function buildDev() {
+  const p = $("devp"); p.classList.remove("hide");
+  p.innerHTML = "<b style='color:#fbbf24'>🛠️ DEV</b>";
+  [["freeze", "Pausar mobs", 1], ["god", "Invencível", 1], ["oneshot", "One-shot kill", 1],
+   ["nums", "Números de dano"], ["hitbox", "Mostrar hitboxes"], ["fps", "FPS / entidades"]].forEach(([k, l, net]) => {
+    const lb = document.createElement("label");
+    lb.innerHTML = `<input type="checkbox"> ${l}`;
+    lb.firstChild.onchange = e => { S.dev[k] = e.target.checked; if (net && !S.isHost) Net.send({ t: "devflag", k, v: e.target.checked }); };
+    p.appendChild(lb);
+  });
+  [["spawn5", "Spawnar 5 mobs"], ["heal", "Curar barcaça"], ["healme", "Curar meu mecha"], ["mat", "+100 Mat"],
+   ["diag", "+1 Diagrama"], ["kill", "Matar todos"], ["skip", "Pular onda"], ["vote", "Forçar votação"],
+   ["unlock", "Liberar todos upgrades"], ["tp", "Teleporte p/ mouse"]].forEach(([a, l]) => {
+    const b = document.createElement("button"); b.textContent = l;
+    b.onclick = () => { const m = s2w(mouse.x, mouse.y); act({ t: "dev", a, x: m.x, y: m.y }); };
+    p.appendChild(b);
+  });
+}
+function devAction(d) {
+  if (!G) return;
+  const p = G.players.find(p => p.id === d.id);
+  const A = {
+    spawn5: () => { for (let i = 0; i < 5; i++) spawnEnemy(); },
+    heal: () => G.barges.forEach(b => b.hp = b.maxHp),
+    healme: () => { if (p) { p.hp = p.maxHp; p.wreck = 0; p.pilot.hp = PMAX; } },
+    mat: () => G.loot.mat += 100,
+    diag: () => { G.loot.diag++; onBlueprint(); },
+    kill: () => G.enemies.forEach(e => e.hp = 0),
+    skip: () => { G.enemies = []; G.toSpawn = 0; },
+    vote: () => { G.wave = Math.max(3, Math.ceil(G.wave / 3) * 3); G.phase = "combat"; G.enemies = []; G.toSpawn = 0; },
+    unlock: () => UPG.forEach(u => G.lvl[u.id] = Math.max(1, G.lvl[u.id] || 0)),
+    tp: () => { if (p) { const o = p.mode === "mecha" ? p : p.pilot; o.x = d.x; o.y = d.y; } }
+  };
+  A[d.a]?.();
+}
+
+// ===================== SNAPSHOT =====================
+const r2 = n => Math.round(n * 100) / 100;
+function pack() {
+  return {
+    t: "state", wave: G.wave, phase: G.phase, timer: G.timer, left: G.toSpawn + G.enemies.length,
+    loot: G.loot, lvl: G.lvl, parts: G.parts, votes: G.votes,
+    players: G.players.map(p => ({ id: p.id, name: p.name, color: p.color, base: p.base, mode: p.mode,
+      x: r2(p.x), y: r2(p.y), z: r2(p.z), aim: r2(p.aim), hp: Math.round(p.hp), maxHp: p.maxHp, wreck: p.wreck, respawn: p.respawn,
+      pilot: { x: r2(p.pilot.x), y: r2(p.pilot.y), hp: Math.round(p.pilot.hp) }, tow: p.tow })),
+    enemies: G.enemies.map(e => ({ type: e.type, x: r2(e.x), y: r2(e.y), w: e.w, hp: e.hp, maxHp: e.maxHp })),
+    shots: G.shots.map(s => ({ x: r2(s.x), y: r2(s.y), f: s.f })),
+    carcasses: G.carcasses.map(c => ({ id: c.id, x: r2(c.x), y: r2(c.y) })),
+    pickups: G.pickups.map(k => ({ x: k.x, y: k.y })),
+    barges: G.barges.map(b => ({ x: b.x, y: b.y, hp: Math.round(b.hp), maxHp: b.maxHp, size: b.size })),
+    fx: G.fx
+  };
+}
+
+// ===================== RENDER =====================
+function diamond(x, y, w, h, fill, stroke) {
+  ctx.beginPath(); ctx.moveTo(x, y - h / 2); ctx.lineTo(x + w / 2, y); ctx.lineTo(x, y + h / 2); ctx.lineTo(x - w / 2, y); ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
+}
+function ell(x, y, r, fill, z = 0) {
+  const p = w2s(x, y, z);
+  ctx.beginPath(); ctx.ellipse(p.x, p.y, r * ISO.W / 2 * zoom * 1.41, r * ISO.H / 2 * zoom * 1.41, 0, 0, 6.29);
+  ctx.fillStyle = fill; ctx.fill();
+}
+function bar(x, y, f, c) {
+  ctx.fillStyle = "#0008"; ctx.fillRect(x - 20, y, 40, 5);
+  ctx.fillStyle = c; ctx.fillRect(x - 20, y, 40 * Math.max(0, Math.min(1, f)), 5);
+}
+const offscreen = p => p.x < -300 || p.x > cv.width + 300 || p.y < -400 || p.y > cv.height + 400;
+
+function drawTile(c, gx, gy, z, alpha) {
+  const p = w2s(gx + 0.5, gy + 0.5, z);
+  if (offscreen(p)) return;
+  const im = img(`${c.base}_${c.dir}.png`), h = ISO.H * zoom;
+  ctx.globalAlpha = alpha;
+  if (im) { const dw = 256 * zoom, dh = 352 * zoom; ctx.drawImage(im, p.x - dw / 2, p.y + h / 2 + ISO.OFF * zoom - dh, dw, dh); }
+  else diamond(p.x, p.y, ISO.W * zoom, h, z ? "#475569" : "#2f5d3a", "#0003");
+  ctx.globalAlpha = 1;
+}
+function drawBarge(b) {
+  const p = w2s(b.x, b.y);
+  diamond(p.x, p.y, ISO.W * zoom * b.size, ISO.H * zoom * b.size, "#f59e0b55", "#f59e0b");
+  ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.max(10, 16 * zoom * 2)}px sans-serif`; ctx.textAlign = "center";
+  ctx.fillText("BARCAÇA", p.x, p.y + 4); bar(p.x, p.y + 12, b.hp / b.maxHp, "#38bdf8");
+}
+function drawMech(p) {
+  const s = w2s(p.x, p.y, p.z), sz = 256 * zoom;
+  ell(p.x, p.y, 0.85, p.color + "44");
+  ctx.globalAlpha = p.wreck > 0 ? 0.4 : 1;
+  const im = img("Watcher.png");
+  if (im) ctx.drawImage(im, s.x - sz / 2, s.y - sz * 0.75, sz, sz);
+  else diamond(s.x, s.y - sz * 0.25, sz * 0.6, sz * 0.5, p.color, "#fff");
+  ctx.globalAlpha = 1;
+  const t = w2s(p.x + Math.cos(p.aim) * 1.3, p.y + Math.sin(p.aim) * 1.3, p.z + 0.3);
+  ctx.strokeStyle = p.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s.x, s.y - ISO.Z * zoom * 0.3); ctx.lineTo(t.x, t.y); ctx.stroke(); ctx.lineWidth = 1;
+  ctx.fillStyle = p.color; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center";
+  ctx.fillText(p.name + (p.wreck > 0 ? " ✖" : ""), s.x, s.y - sz * 0.8);
+  bar(s.x, s.y - sz * 0.78, p.hp / p.maxHp, "#22c55e");
+}
+function drawPilot(p) {
+  if (p.respawn > 0) return;
+  ell(p.pilot.x, p.pilot.y, 0.25, "#fbbf24");
+  const s = w2s(p.pilot.x, p.pilot.y, 0.3);
+  ctx.beginPath(); ctx.arc(s.x, s.y, 7, 0, 6.29); ctx.fillStyle = p.color; ctx.fill();
+  bar(s.x, s.y - 18, p.pilot.hp / PMAX, "#fbbf24");
+}
+
+function render() {
+  ctx.fillStyle = "#0a0f1a"; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (!MAP || !VIEW) return;
+  const me = myP(), ma = me && actorV(me);
+  if (ma) { cam.x += (ma.x - cam.x) * 0.12; cam.y += (ma.y - cam.y) * 0.12; }
+
+  // Chão em ordem diagonal
+  for (let sum = 0; sum <= MAP.w + MAP.h - 2; sum++)
+    for (let x = Math.max(0, sum - MAP.h + 1); x <= Math.min(MAP.w - 1, sum); x++) {
+      const c = MAP.layers[0][sum - x][x]; if (c) drawTile(c, x, sum - x, 0, 1);
+    }
+
+  // Camadas superiores + entidades, ordenadas por profundidade
+  const list = [];
+  const md = ma ? ma.x + ma.y : 0, mc = ma ? ma.x - ma.y : 0;
+  for (const t of MAP.upper) {
+    const d = t.x + t.y + 1;
+    const fade = ma && d > md + 0.5 && d - md < 4 && Math.abs((t.x - t.y) - mc) < 2.5;
+    list.push([d + t.z * 0.01, () => drawTile(t.c, t.x, t.y, t.z, fade ? 0.35 : 1)]);
+  }
+  VIEW.barges.forEach(b => list.push([b.x + b.y, () => drawBarge(b)]));
+  VIEW.carcasses.forEach(c => list.push([c.x + c.y, () => ell(c.x, c.y, 0.4, "#94a3b8")]));
+  VIEW.pickups.forEach(k => list.push([k.x + k.y, () => ell(k.x, k.y, 0.3 + Math.sin(performance.now() / 150) * 0.05, "#c084fc")]));
+  VIEW.enemies.forEach(e => list.push([e.x + e.y, () => {
+    ell(e.x, e.y, e.w / 2, e.type === "gunner" ? "#a855f7" : "#ef4444");
+    const s = w2s(e.x, e.y, 0.5); bar(s.x, s.y - 14, e.hp / e.maxHp, "#f87171");
+  }]));
+  VIEW.players.forEach(p => {
+    list.push([p.x + p.y, () => drawMech(p)]);
+    if (p.mode === "pilot") list.push([p.pilot.x + p.pilot.y, () => drawPilot(p)]);
+  });
+  VIEW.shots.forEach(s => list.push([s.x + s.y, () => {
+    const p = w2s(s.x, s.y, 0.35); ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 6.29);
+    ctx.fillStyle = s.f === "p" ? "#fde047" : "#f472b6"; ctx.fill();
+  }]));
+  list.sort((a, b) => a[0] - b[0]).forEach(e => e[1]());
+
+  if (S.dev.hitbox) {
+    VIEW.players.forEach(p => { const a = actorV(p), w = p.mode === "mecha" ? MW : PW, s = w2s(a.x, a.y); diamond(s.x, s.y, ISO.W * zoom * w, ISO.H * zoom * w, null, "#0f0"); });
+    VIEW.enemies.forEach(e => { const s = w2s(e.x, e.y); diamond(s.x, s.y, ISO.W * zoom * e.w, ISO.H * zoom * e.w, null, "#f00"); });
+  }
+  if (S.dev.nums) VIEW.fx.forEach(f => {
+    const s = w2s(f.x, f.y, 1 + (0.8 - f.t)); ctx.fillStyle = f.c; ctx.font = "bold 14px sans-serif"; ctx.textAlign = "center"; ctx.fillText(f.txt, s.x, s.y);
+  });
+  if (S.dev.fps) {
+    ctx.fillStyle = "#0f0"; ctx.font = "12px monospace"; ctx.textAlign = "left";
+    ctx.fillText(`FPS ${fps | 0} | inimigos ${VIEW.enemies.length} | tiros ${VIEW.shots.length} | mapa ${MAP.w}x${MAP.h}`, 10, cv.height - 10);
+  }
+}
+
+// ===================== HUD =====================
+let hudT = 0;
+function updateHUD(dt) {
+  if ((hudT -= dt) > 0) return; hudT = 0.15;
+  const v = VIEW; if (!v) return;
+  const ph = { prep: `próxima em ${Math.ceil(v.timer)}s`, combat: `inimigos: ${v.left}`, vote: `votação ${Math.ceil(v.timer)}s` }[v.phase];
+  $("h-wave").textContent = `Onda ${v.wave} • ${ph}`;
+  $("h-loot").textContent = `📦 ${v.loot.mat} Mat • 📘 ${v.loot.diag} Diag`;
+  const me = myP();
+  if (me) {
+    const b = v.barges[me.base];
+    $("h-me").textContent = me.respawn > 0 ? `Renascendo em ${Math.ceil(me.respawn)}s`
+      : `Mecha ${me.hp}/${me.maxHp} • Traje ${me.pilot.hp}/${PMAX} • Barcaça ${b.hp}/${b.maxHp}`;
+    const a = actorV(me); let t = "";
+    if (me.mode === "pilot" && Math.hypot(me.x - a.x, me.y - a.y) < 2.2 && !me.wreck) t = "[F / B0] Entrar no mecha";
+    else if (me.tow) t = "[Q / B2] Soltar carcaça (leve até a barcaça)";
+    else if (me.mode === "mecha" && v.carcasses.some(c => Math.hypot(c.x - a.x, c.y - a.y) < 2)) t = "[E / B3] Rebocar carcaça";
+    else if (Math.abs(a.x - b.x) < b.size / 2 + 1.6 && Math.abs(a.y - b.y) < b.size / 2 + 1.6) t = "[E / B3] Terminal da barcaça" + (me.mode === "pilot" ? " • reparando..." : "");
+    $("prompt").textContent = t; $("prompt").classList.toggle("hide", !t);
+  }
+  const showVote = v.phase === "vote" && !v.votes[S.myId] && !ended;
+  $("vote").classList.toggle("hide", !showVote);
+  if (showVote) $("vote-info").textContent = `Ondas sobrevividas: ${v.wave}. Quem extrair leva sua parte do loot. Tempo: ${Math.ceil(v.timer)}s` +
+    (S.isHost ? " — Você é o host: se extrair, a partida acaba para todos." : "");
+  if (!$("term").classList.contains("hide")) renderTerminal();
+}
+function renderTerminal() {
+  const v = VIEW; if (!v) return;
+  $("term-info").textContent = `Materiais: ${v.loot.mat} • Diagramas coletados: ${v.loot.diag}`;
+  $("term-list").innerHTML = UPG.map(u => {
+    const l = v.lvl[u.id] || 0, pt = v.parts[u.id] || 0;
+    if (!l) return `<div class="card">🔒 <b>${u.name}</b><br>${u.parts ? `Raro: partes ${pt}/${u.parts}` : "Encontre um diagrama"}</div>`;
+    return `<div class="card"><b>${u.name}</b> Nv.${l}/${u.max}<br>${u.desc}<br>${l < u.max ? `<button data-buy="${u.id}" ${v.loot.mat < u.cost * l ? "disabled" : ""}>${u.cost * l} Mat</button>` : "MÁX"}</div>`;
+  }).join("");
+}
+
+// ===================== LOOP =====================
+let last = performance.now(), sendT = 0, bcT = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; fps = fps * 0.95 + (1 / Math.max(dt, 0.001)) * 0.05;
+  if (MAP && !ended) {
+    const inp = readInput();
+    if (S.isHost && G) {
+      const me = G.players.find(p => p.id === S.myId);
+      if (me) { const old = me.input || {}; me.input = inp; EDGES.forEach(k => me.input[k] = inp[k] || old[k]); }
+      clearEdges();
+      if (!(S.paused && !S.online) && !G.over) update(dt);
+      VIEW = pack();
+      if (S.online && (bcT += dt) > 0.05) { bcT = 0; Net.broadcast(VIEW); }
+    } else if (!S.isHost && (sendT += dt) > 0.033) { sendT = 0; Net.sendInput(inp); clearEdges(); }
+  }
+  if (MAP) { render(); updateHUD(dt); }
+  requestAnimationFrame(frame);
+}
+
+function resize() {
+  cv.width = innerWidth; cv.height = innerHeight;
+  zoom = Math.max(0.25, Math.min(0.6, Math.min(cv.width, cv.height) / 1500));
+}
+addEventListener("resize", resize);
+
+// ===================== BOOT =====================
+(async function boot() {
+  resize(); buildUI();
+  try {
+    BASE = await loadBase();
+    const m = BASE.isoMetrics || {};
+    ISO.W = m.ISO_W ?? ISO.W; ISO.H = m.ISO_H ?? ISO.H; ISO.Z = m.LAYER_STEP_Y ?? ISO.Z; ISO.OFF = m.spriteOffsetY ?? ISO.OFF;
+  } catch (e) { alert(e.message); }
+  requestAnimationFrame(frame);
+})();
