@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MECHA BARGE — Editor de Níveis Isométrico 10×10</title>
+  <title>MECHA BARGE — Editor de Níveis Isométrico</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
     body {
@@ -303,7 +303,7 @@
 
 <header>
   <div class="brand">
-    MECHA BARGE <span>EDITOR ISOMÉTRICO 10×10</span>
+    MECHA BARGE <span>EDITOR ISOMÉTRICO <span id="grid-label-top">10×10</span></span>
   </div>
 
   <div class="toolbar-group">
@@ -408,6 +408,11 @@
         <button id="btn-zoom-out" style="flex:1;">➖ Zoom</button>
         <button id="btn-zoom-in" style="flex:1;">➕ Zoom</button>
       </div>
+      <div style="display:flex; gap:4px; align-items:center; font-size:11px; color:#cbd5e1;">
+        <span>Grade:</span>
+        <input type="number" id="num-grid" class="calib-num" min="2" max="100" value="10" />
+        <button id="btn-grid-apply" style="flex:1;">Aplicar</button>
+      </div>
     </div>
 
     <div class="hud-overlay">
@@ -419,7 +424,7 @@
 <!-- Modal Export/Import -->
 <div class="modal-backdrop" id="json-modal">
   <div class="modal">
-    <h3>Exportar / Importar Nível (10×10 × 5 Camadas)</h3>
+    <h3>Exportar / Importar Nível (<span id="grid-label-modal">10×10</span> × 5 Camadas)</h3>
     <textarea id="json-textarea" spellcheck="false"></textarea>
     <div class="modal-actions">
       <button id="btn-copy-json">📋 Copiar JSON</button>
@@ -437,16 +442,19 @@ const PATHS = {
   objects: "sprites/objects/",
   actors: "sprites/actors/"
 };
-let GRID_SIZE = Number(localStorage.getItem("gridSize")) || 10;
 const MAX_LAYERS = 5;
 const DIRS = ["N", "E", "S", "W"];
 
 // ===== DEFAULTS (edite aqui) =====
-const DEFAULTS = { ISO_W: 220, ISO_H: 110, LAYER_STEP_Y: 114, spriteOffsetY: 118, zoom: 0.65 };
-const OBJ_SCALE = 1; // escala extra para objetos/indicadores (ex: 0.5, 1.5, 2)
+const DEFAULTS = { ISO_W: 220, ISO_H: 110, LAYER_STEP_Y: 114, spriteOffsetY: 118, zoom: 0.65, gridSize: 10 };
+const OBJ_SCALE = 1;
 const STORAGE_KEY = "isoCalib";
+const GRID_KEY = "gridSize";
+const GRID_MIN = 2;
+const GRID_MAX = 100;
 
-// Sprites com um único ângulo (sem _N/_E/_S/_W)
+let GRID_SIZE = Number(localStorage.getItem(GRID_KEY)) || DEFAULTS.gridSize;
+
 const SINGLE_ANGLE = new Set(["crate-medium", "crate-small", "crate-wide"]);
 
 const CATALOG = {
@@ -539,9 +547,12 @@ let isMouseDown = false;
 let mouseButton = 0;
 let hoverCell = null;
 
-let layers = Array.from({ length: MAX_LAYERS }, () =>
-  Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null))
-);
+function emptyLayers(n = GRID_SIZE) {
+  return Array.from({ length: MAX_LAYERS }, () =>
+    Array.from({ length: n }, () => Array(n).fill(null))
+  );
+}
+let layers = emptyLayers();
 
 const imgCache = new Map();
 function getSpriteImage(filename) {
@@ -571,6 +582,27 @@ function screenToGrid(sx, sy, gz) {
   const gx = Math.floor((adjX / (ISO_W * 0.5) + adjY / (ISO_H * 0.5)) * 0.5);
   const gy = Math.floor((adjY / (ISO_H * 0.5) - adjX / (ISO_W * 0.5)) * 0.5);
   return { gx, gy };
+}
+
+// Tamanho da grade
+function updateGridLabels() {
+  const t = `${GRID_SIZE}×${GRID_SIZE}`;
+  document.getElementById("grid-label-top").textContent = t;
+  document.getElementById("grid-label-modal").textContent = t;
+  document.getElementById("num-grid").value = GRID_SIZE;
+  document.title = `MECHA BARGE — Editor de Níveis Isométrico ${t}`;
+}
+
+function resizeGrid(n) {
+  n = Math.max(GRID_MIN, Math.min(GRID_MAX, Math.round(Number(n)) || DEFAULTS.gridSize));
+  layers = Array.from({ length: MAX_LAYERS }, (_, z) =>
+    Array.from({ length: n }, (_, y) =>
+      Array.from({ length: n }, (_, x) => layers[z]?.[y]?.[x] ?? null)
+    )
+  );
+  GRID_SIZE = n;
+  localStorage.setItem(GRID_KEY, n);
+  updateGridLabels();
 }
 
 // Calibração
@@ -625,30 +657,33 @@ document.getElementById("btn-preset-256").addEventListener("click", () => {
   updateCalibValues(256, 128, 64, 0);
 });
 
-// Mapa exemplo
+// Mapa exemplo (adapta ao tamanho atual)
 function buildSampleMap() {
-  layers = Array.from({ length: MAX_LAYERS }, () =>
-    Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null))
-  );
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
+  layers = emptyLayers();
+  const n = GRID_SIZE;
+  const set = (z, y, x, cell) => {
+    if (x >= 0 && x < n && y >= 0 && y < n) layers[z][y][x] = cell;
+  };
+  const pathX = Math.floor(n * 0.4);
+  const riverY = Math.floor(n * 0.6);
+
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
       let base = "grass_block";
       let dir = "S";
-      if (x === 4) { base = "grass_path"; dir = "S"; }
-      if (y === 6) { base = "grass_river"; dir = "E"; }
-      if (x === 4 && y === 6) { base = "grass_riverBridge"; dir = "S"; }
+      if (x === pathX) { base = "grass_path"; dir = "S"; }
+      if (y === riverY) { base = "grass_river"; dir = "E"; }
+      if (x === pathX && y === riverY) { base = "grass_riverBridge"; dir = "S"; }
       layers[0][y][x] = { base, dir };
     }
   }
-  layers[1][1][1] = { base: "building_center", dir: "S" };
-  layers[1][1][2] = { base: "building_sides", dir: "S" };
-  layers[2][1][1] = { base: "roof_slantCornerBeige", dir: "S" };
-  layers[2][1][2] = { base: "roof_slantCornerBeige", dir: "E" };
-  layers[1][7][7] = { base: "rocks", dir: "S" };
-  layers[1][2][7] = { base: "fence_wood", dir: "W" };
-  layers[1][5][2] = {
-    isSpawn: true, base: "spawn_barge", label: "Barcaça (2×2)", color: "#f59e0b", size: 2
-  };
+  set(1, 1, 1, { base: "building_center", dir: "S" });
+  set(1, 1, 2, { base: "building_sides", dir: "S" });
+  set(2, 1, 1, { base: "roof_slantCornerBeige", dir: "S" });
+  set(2, 1, 2, { base: "roof_slantCornerBeige", dir: "E" });
+  set(1, 7, 7, { base: "rocks", dir: "S" });
+  set(1, 2, 7, { base: "fence_wood", dir: "W" });
+  set(1, 5, 2, { isSpawn: true, base: "spawn_barge", label: "Barcaça (2×2)", color: "#f59e0b", size: 2 });
 }
 
 // Paleta
@@ -884,7 +919,7 @@ window.addEventListener("mouseup", () => {
 canvas.addEventListener("wheel", e => {
   e.preventDefault();
   const factor = e.deltaY < 0 ? 1.12 : 0.89;
-  zoom = Math.min(1.8, Math.max(0.18, zoom * factor));
+  zoom = Math.min(1.8, Math.max(0.05, zoom * factor));
   saveCalib();
 }, { passive: false });
 
@@ -923,14 +958,16 @@ document.getElementById("btn-fill-layer").onclick = () => {
 };
 
 document.getElementById("btn-sample").onclick = buildSampleMap;
-document.getElementById("btn-clear").onclick = () => {
-  layers = Array.from({ length: MAX_LAYERS }, () =>
-    Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null))
-  );
-};
+document.getElementById("btn-clear").onclick = () => { layers = emptyLayers(); };
 
 document.getElementById("btn-zoom-in").onclick = () => { zoom = Math.min(1.8, zoom * 1.15); saveCalib(); };
-document.getElementById("btn-zoom-out").onclick = () => { zoom = Math.max(0.18, zoom * 0.87); saveCalib(); };
+document.getElementById("btn-zoom-out").onclick = () => { zoom = Math.max(0.05, zoom * 0.87); saveCalib(); };
+
+document.getElementById("btn-grid-apply").onclick = () =>
+  resizeGrid(document.getElementById("num-grid").value);
+document.getElementById("num-grid").addEventListener("keydown", e => {
+  if (e.key === "Enter") resizeGrid(e.target.value);
+});
 
 document.querySelectorAll("#layer-btns button").forEach(btn => {
   btn.onclick = () => setLayer(Number(btn.dataset.z));
@@ -986,7 +1023,7 @@ document.getElementById("btn-download-json").onclick = () => {
   const blob = new Blob([textarea.value], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "mecha_barge_level_10x10.json";
+  a.download = `mecha_barge_level_${GRID_SIZE}x${GRID_SIZE}.json`;
   a.click();
 };
 
@@ -995,6 +1032,7 @@ document.getElementById("btn-import-json").onclick = () => {
     const parsed = JSON.parse(textarea.value);
     if (!parsed.layers || !Array.isArray(parsed.layers)) throw new Error("Formato inválido");
     layers = parsed.layers;
+    resizeGrid(parsed.gridSize ?? parsed.layers[0]?.length ?? DEFAULTS.gridSize);
     if (parsed.isoMetrics) {
       updateCalibValues(
         parsed.isoMetrics.ISO_W ?? DEFAULTS.ISO_W,
@@ -1023,6 +1061,7 @@ if (saved) {
   updateCalibValues(DEFAULTS.ISO_W, DEFAULTS.ISO_H, DEFAULTS.LAYER_STEP_Y, DEFAULTS.spriteOffsetY);
 }
 
+resizeGrid(GRID_SIZE);
 resizeCanvas();
 buildSampleMap();
 renderPalette();
