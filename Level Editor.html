@@ -713,8 +713,8 @@ function drawDiamond(cx, cy, w, h, stroke, fill) {
 
 function drawTileCell(cell, gx, gy, gz, alpha = 1) {
   const { x, y } = gridToScreen(gx, gy, gz);
-  const w = ISO_W * zoom;
-  const h = ISO_H * zoom;
+  const drawW = img.naturalWidth * zoom;
+  const drawH = img.naturalHeight * zoom;
 
   ctx.save();
   ctx.globalAlpha = alpha;
