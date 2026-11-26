@@ -374,9 +374,18 @@
       <div class="calib-row">
         <div class="calib-header">
           <span>Offset Vertical Y:</span>
+
           <input type="number" id="num-offset-y" class="calib-num" min="-150" max="150" value="118" />
         </div>
         <input type="range" id="rng-offset-y" min="-150" max="150" step="1" value="118" />
+        <div class="calib-row">
+          <div class="calib-header">
+            <span>Offset Água (px):</span>
+            <input type="number" id="num-water-y" class="calib-num" min="-100" max="100" value="12" />
+          </div>
+          <input type="range" id="rng-water-y" min="-100" max="100" step="1" value="12" />
+        </div>
+
       </div>
 
       <div style="display:flex; gap:4px;">
@@ -456,6 +465,9 @@ const GRID_MAX = 100;
 let GRID_SIZE = Number(localStorage.getItem(GRID_KEY)) || DEFAULTS.gridSize;
 
 const SINGLE_ANGLE = new Set(["crate-medium", "crate-small", "crate-wide"]);
+const WATER_IDS = new Set(["water_center"]);
+const WATER_KEY = "waterOffsetY";
+let waterOffsetY = Number(localStorage.getItem(WATER_KEY) ?? 12);
 
 const CATALOG = {
   terrain: [
@@ -646,6 +658,20 @@ numLayerY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, numLay
 rngOffsetY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, LAYER_STEP_Y, rngOffsetY.value));
 numOffsetY.addEventListener("input", () => updateCalibValues(ISO_W, ISO_H, LAYER_STEP_Y, numOffsetY.value || 0));
 
+const rngWaterY = document.getElementById("rng-water-y");
+const numWaterY = document.getElementById("num-water-y");
+
+function setWaterOffset(v) {
+  waterOffsetY = Number(v) || 0;
+  rngWaterY.value = waterOffsetY;
+  numWaterY.value = waterOffsetY;
+  localStorage.setItem(WATER_KEY, waterOffsetY);
+}
+rngWaterY.addEventListener("input", () => setWaterOffset(rngWaterY.value));
+numWaterY.addEventListener("input", () => setWaterOffset(numWaterY.value));
+setWaterOffset(waterOffsetY);
+
+
 document.getElementById("btn-preset-default").addEventListener("click", () => {
   zoom = DEFAULTS.zoom;
   updateCalibValues(DEFAULTS.ISO_W, DEFAULTS.ISO_H, DEFAULTS.LAYER_STEP_Y, DEFAULTS.spriteOffsetY);
@@ -784,7 +810,9 @@ function drawTileCell(cell, gx, gy, gz, alpha = 1) {
       const s = isObjSprite ? OBJ_SCALE : 1;
       const drawW = img.naturalWidth * zoom * s;
       const drawH = img.naturalHeight * zoom * s;
-      ctx.drawImage(img, x - drawW * 0.5, y + h * 0.5 + spriteOffsetY * zoom - drawH, drawW, drawH);
+      const extraY = WATER_IDS.has(cell.base) ? waterOffsetY : 0;
+      ctx.drawImage(img, x - drawW * 0.5, y + h * 0.5 + (spriteOffsetY + extraY) * zoom - drawH, drawW, drawH);
+
     } else {
       drawDiamond(x, y, w, h, "#38bdf8", "rgba(56, 189, 248, 0.2)");
     }
@@ -1004,7 +1032,7 @@ document.getElementById("btn-export").onclick = () => {
     gridSize: GRID_SIZE,
     maxLayers: MAX_LAYERS,
     repoBase: REPO_RAW,
-    isoMetrics: { ISO_W, ISO_H, LAYER_STEP_Y, spriteOffsetY },
+    isoMetrics: { ISO_W, ISO_H, LAYER_STEP_Y, spriteOffsetY, waterOffsetY },
     layers
   };
   textarea.value = JSON.stringify(payload, null, 2);
@@ -1038,7 +1066,8 @@ document.getElementById("btn-import-json").onclick = () => {
         parsed.isoMetrics.ISO_W ?? DEFAULTS.ISO_W,
         parsed.isoMetrics.ISO_H ?? DEFAULTS.ISO_H,
         parsed.isoMetrics.LAYER_STEP_Y ?? DEFAULTS.LAYER_STEP_Y,
-        parsed.isoMetrics.spriteOffsetY ?? DEFAULTS.spriteOffsetY
+        parsed.isoMetrics.spriteOffsetY ?? DEFAULTS.spriteOffsetY,
+        parsed.isoMetrics.waterOffsetY ?? waterOffsetY
       );
     }
     modal.classList.remove("open");
