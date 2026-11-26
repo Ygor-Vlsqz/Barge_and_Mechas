@@ -1,213 +1,86 @@
-import { R, nearBase } from "./utils.js";
-
-/**
- * Carrega o mapa base (tiles de terreno, água, rios, pontes …)
- * Esta função substitui a anterior `loadBase`/`mapgen.js`.
- */
 export async function loadBase() {
-  const w = 100, h = 60;                     // tamanho do mapa (pode ser ajustado)
-  const layers = [
-    // camada 0 – solo/água
-    Array.from({ length: h }, () => Array.from({ length: w }, () => null)),
-    // camada 1 – objetos acima do solo (pontes, itens, etc.)
-    Array.from({ length: h }, () => Array.from({ length: w }, () => null)),
-    // camada 2 – overlay de terreno (montanhas, rochas, etc.)
-    Array.from({ length: h }, () => Array.from({ length: w }, () => null))
-  ];
+  const r = await fetch(encodeURI("./Basic Start.json"));
+  if (!r.ok) throw new Error("Basic Start.json não encontrado");
+  return r.json();
+}
 
-  // -----------------------------------------------------------------
-  // 1️⃣  Preenche todo o mapa com terra firme (grass_block)
-  // -----------------------------------------------------------------
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      layers[0][y][x] = { base: "grass_block", dir: "S" };
-    }
-  }
-
-  // -----------------------------------------------------------------
-  // 2️⃣  Gera lagos (grass_water, concave, convex) – áreas de água sem fluxo
-  // -----------------------------------------------------------------
-  const lakeCount = 6;
-  for (let i = 0; i < lakeCount; i++) {
-    const lx = 4 + R() * (w - 8);
-    const ly = 4 + R() * (h - 8);
-    const r  = 2 + R() * 3;                     // raio entre 2 e 5 tiles
-    if (nearBase(lx, ly, 14)) continue;        // evita lago perto das bases
-
-    for (let y = Math.floor(ly - r); y <= ly + r; y++) {
-      for (let x = Math.floor(lx - r); x <= lx + r; x++) {
-        if (x < 0 || x >= w || y < 0 || y >= h) continue;
-        if (Math.hypot(x - lx, y - ly) < r) {
-          // Escolhe variação de água baseada na posição no lago
-          let tile = "grass_water";
-          if (x === Math.floor(lx - r) || x === Math.ceil(lx + r) ||
-              y === Math.floor(ly - r) || y === Math.ceil(ly + r)) {
-            // borda externa do lago: usa variante convexa
-            tile = "grass_waterConvex";
-          } else if (x === Math.floor(lx - r) + 1 || x === Math.ceil(lx + r) - 1 ||
-                     y === Math.floor(ly - r) + 1 || y === Math.ceil(ly + r) - 1) {
-            // próxima da borda: usa variante côncava
-            tile = "grass_waterConcave";
-          }
-          layers[0][y][x] = { base: tile, dir: "S" };
-        }
-      }
-    }
-  }
-
-  // -----------------------------------------------------------------
-  // 3️⃣  Gera um rio contínuo (grass_river) entre dois pontos aleatórios
-  // -----------------------------------------------------------------
-  const riverPath = gerarCaminhoDeRio(w, h);
-  const riverTiles = new Set();   // guarda coordenadas "x,y" que pertencem ao rio
-
-  // coloca o rio propriamente dito
-  for (const [x, y] of riverPath) {
-    layers[0][y][x] = { base: "grass_river", dir: "S" };
-    riverTiles.add(`${x},${y}`);
-  }
-
-  // -----------------------------------------------------------------
-  // 4️⃣  Margens do rio – usa grass_waterRiver quando ao lado de água,
-  //     caso contrário grass_riverBank
-  // -----------------------------------------------------------------
-  const dirs = [
-    [ 0, -1], [ 0,  1],
-    [-1,  0], [ 1,  0],
-    [-1, -1], [ 1, -1],
-    [-1,  1], [ 1,  1]
-  ];
-
-  for (const [rx, ry] of riverPath) {
-    for (const [dx, dy] of dirs) {
-      const nx = rx + dx, ny = ry + dy;
-      if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-      const key = `${nx},${ny}`;
-      if (riverTiles.has(key)) continue; // já é parte do rio
-
-      const current = layers[0][ny][nx];
-      if (current && current.base && current.base.startsWith("grass_water")) {
-        // ao lado de lago, usamos margem de água que já inclui a transição
-        layers[0][ny][nx] = { base: "grass_waterRiver", dir: "S" };
-      } else if (!current || current.base === "grass_block") {
-        layers[0][ny][nx] = { base: "grass_riverBank", dir: "S" };
-      }
-    }
-  }
-
-  // -----------------------------------------------------------------
-  // 5️⃣  Pontes (grass_riverBridge) – inseridas aleatoriamente ao longo do rio
-  // -----------------------------------------------------------------
-  const bridgeCount = Math.max(1, Math.floor(riverPath.length / 30)); // aproximadamente 1 ponte a cada 30 tiles
-  for (let i = 0; i < bridgeCount; i++) {
-    const idx = Math.floor(R() * riverPath.length);
-    const [bx, by] = riverPath[idx];
-    // garante que a ponte substitua o tile do rio sem apagar a margem ao redor
-    layers[0][by][bx] = { base: "grass_riverBridge", dir: "S" };
-  }
-
-  // -----------------------------------------------------------------
-  // 5️⃣   Camada de objetos (layer 1) – exemplo de árvores e pedras
-  // -----------------------------------------------------------------
-  for (let i = 0; i < 20; i++) {
-    const ox = Math.floor(R() * w);
-    const oy = Math.floor(R() * h);
-    // evita colocar objetos sobre água ou rios
-    const baseTile = layers[0][oy][ox];
-    if (baseTile && baseTile.base && baseTile.base.startsWith("grass_water")) continue;
-    if (baseTile && baseTile.base && baseTile.base.startsWith("grass_river")) continue;
-    layers[1][oy][ox] = { base: "tree_oak", dir: "S" };
-  }
-
-  // -----------------------------------------------------------------
-  // 6️⃣  Ajusta bordas de água (concave/convex) para visual mais natural
-  // -----------------------------------------------------------------
-  ajustarBordasDeAgua(layers[0], w, h);
-
-  // -----------------------------------------------------------------
-  // 7️⃣  Gera montanhas em camada 2 (overlay)
-  // -----------------------------------------------------------------
-  gerarMontanhas(layers[2], layers[0], w, h);
-
-  // -----------------------------------------------------------------
-  // 8️⃣  Retorna o objeto completo de mapa (compatível com o resto do jogo)
-  // -----------------------------------------------------------------
-  return {
-    w,
-    h,
-    layers,
-    isoMetrics: { ISO_W: 220, ISO_H: 110, LAYER_STEP_Y: 114, spriteOffsetY: 118 }
+// RNG com seed: todos os jogadores geram o mesmo mapa
+function rng(a) {
+  return () => {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
 }
 
-/**
- * Gera um caminho de rio contínuo entre duas bordas opostas do mapa.
- * Usa um algoritmo de “random walk” que garante conectividade.
- *
- * @param {number} w  largura do mapa
- * @param {number} h  altura do mapa
- * @returns {Array<[number, number]>} lista de coordenadas [x, y] do rio
- */
-function gerarCaminhoDeRio(w, h) {
-  // escolhe a borda de origem aleatoriamente (esquerda ou topo)
-  const startSide = R() < 0.5 ? "left" : "top";
-  const endSide   = startSide === "left" ? "right" : "bottom";
-
-  let x, y;
-  if (startSide === "left")   { x = 0;          y = Math.floor(R() * h); }
-  else                         { x = Math.floor(R() * w); y = 0;      }
-
-  const path = [[x, y]];
-  const maxSteps = w * h;   // limite de segurança para evitar loops infinitos
-
-  while (maxSteps--) {
-    // determina direção aproximada para o lado oposto
-    const dirs = [];
-
-    if (endSide === "right")  dirs.push([1, 0]);   // tenta avançar para a direita
-    if (endSide === "bottom") dirs.push([0, 1]);   // tenta avançar para baixo
-
-    // adiciona movimentos diagonais para suavizar curvas
-    if (endSide === "right")  dirs.push([1, 1], [1, -1]);
-    if (endSide === "bottom") dirs.push([1, 1], [-1, 1]);
-
-    // sempre permite pequenos passos laterais para evitar paredes
-    dirs.push([0, -1], [-1, 0], [1, 0], [0, 1]);
-
-    // escolhe aleatoriamente entre as direções válidas que mantêm o ponto dentro do mapa
-    const valid = dirs.filter(([dx, dy]) => {
-      const nx = x + dx, ny = y + dy;
-      return nx >= 0 && nx < w && ny >= 0 && ny < h;
-    });
-
-    const [dx, dy] = valid[Math.floor(R() * valid.length)];
-    x += dx; y += dy;
-    path.push([x, y]);
-
-    // verifica se chegou na borda desejada
-    if ((endSide === "right" && x === w - 1) ||
-        (endSide === "bottom" && y === h - 1)) {
-      break;
-    }
-  }
-
-  // remove possíveis repetições consecutivas (caso o algoritmo “oscile”)
-  const cleanPath = [];
-  const seen = new Set();
-  for (const pt of path) {
-    const key = `${pt[0]},${pt[1]}`;
-    if (!seen.has(key)) {
-      cleanPath.push(pt);
-      seen.add(key);
-    }
-  }
-
-  return cleanPath;
+function analyze(base) {
+  const cells = [], spawns = [];
+  let barge = null, maxX = 0, maxY = 0;
+  base.layers.forEach((L, z) => L.forEach((row, y) => row.forEach((c, x) => {
+    if (!c) return;
+    const s = c.size || 1;
+    maxX = Math.max(maxX, x + s); maxY = Math.max(maxY, y + s);
+    if (c.base === "mech_Watcher") spawns.push({ x: x + s / 2, y: y + s / 2, s });
+    else if (c.base === "spawn_barge") barge = { x: x + s / 2, y: y + s / 2 };
+    else if (!c.isSpawn) cells.push({ x, y, z, c });
+  })));
+  return { cells, spawns, barge: barge || { x: maxX / 2, y: maxY / 2 }, bw: maxX, bh: maxY };
 }
 
-/**
- * Função auxiliar de geração de número aleatório entre 0 e 1.
- */
-function R() {
-  return Math.random();
+export function generateMap(base, players, seed) {
+  const R = rng(seed), A = analyze(base), two = players > 4;
+  const w = two ? 100 : 60, h = 60, LC = Math.max(5, base.layers.length);
+  const layers = Array.from({ length: LC }, () => Array.from({ length: h }, () => Array(w).fill(null)));
+  const reserved = new Set(), K = (x, y) => x + "," + y;
+  const centers = two ? [[25, 30], [75, 30]] : [[30, 30]];
+
+  const bases = centers.map(([cx, cy]) => {
+    const ox = cx - Math.floor(A.bw / 2), oy = cy - Math.floor(A.bh / 2);
+    A.cells.forEach(({ x, y, z, c }) => {
+      layers[z][oy + y][ox + x] = { base: c.base, dir: c.dir || "S" };
+      reserved.add(K(ox + x, oy + y));
+    });
+    const foot = (fx, fy, s) => { for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) reserved.add(K(Math.floor(fx) + dx, Math.floor(fy) + dy)); };
+    const spawns = A.spawns.map(s => { foot(ox + s.x - s.s / 2, oy + s.y - s.s / 2, s.s); return { x: ox + s.x, y: oy + s.y }; });
+    const bx = ox + A.barge.x, by = oy + A.barge.y;
+    foot(bx - 3, by - 3, 6); // espaço para a barcaça crescer
+    return { cx, cy, spawns, barge: { x: bx, y: by } };
+  });
+
+  const nearBase = (x, y, r) => bases.some(b => Math.hypot(x - b.cx, y - b.cy) < r);
+  const D = ["N", "E", "S", "W"];
+
+  // Lagos
+  for (let i = 0; i < (two ? 10 : 6); i++) {
+    const lx = 4 + R() * (w - 8), ly = 4 + R() * (h - 8), r = 2 + R() * 3;
+    if (nearBase(lx, ly, 14)) continue;
+    for (let y = Math.floor(ly - r); y <= ly + r; y++)
+      for (let x = Math.floor(lx - r); x <= lx + r; x++)
+        if (x >= 0 && y >= 0 && x < w && y < h && Math.hypot(x - lx, y - ly) < r)
+          layers[0][y][x] = { base: "grass_water", dir: "S" };
+  }
+
+  // Preenche só o que não é da base
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (reserved.has(K(x, y))) continue;
+    if (!layers[0][y][x]) layers[0][y][x] = { base: "grass_block", dir: "S" };
+    if (layers[0][y][x].base !== "grass_block" || nearBase(x, y, 8)) continue;
+    const r = R();
+    if (r < 0.03) layers[1][y][x] = { base: "rocks", dir: D[R() * 4 | 0] };
+    else if (r < 0.045) layers[1][y][x] = { base: "fence_wood", dir: D[R() * 4 | 0] };
+    else if (r < 0.05) {
+      layers[1][y][x] = { base: "building_center", dir: "S" };
+      layers[2][y][x] = { base: "roof_slantCornerBeige", dir: D[R() * 4 | 0] };
+    }
+  }
+
+  const solid = new Set(), upper = [];
+  layers.forEach((L, z) => L.forEach((row, y) => row.forEach((c, x) => {
+    if (!c) return;
+    if (z === 0) { if (/^grass_(water|river(?!Bridge))/.test(c.base)) solid.add(K(x, y)); }
+    else { upper.push({ x, y, z, c }); if (!/stairs|slope/.test(c.base)) solid.add(K(x, y)); }
+  })));
+
+  return { w, h, layers, solid, upper, bases };
 }
