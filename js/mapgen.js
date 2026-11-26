@@ -1,5 +1,3 @@
-import { R, nearBase } from "./utils.js";
-
 // Ajuste os nomes caso seus sprites sejam diferentes
 const T = {
   ground: "grass_block",
