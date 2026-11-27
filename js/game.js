@@ -696,21 +696,23 @@ function drawTile(c, gx, gy, z, alpha) {
   const p = w2s(gx + 0.5, gy + 0.5, z);
   if (offscreen(p)) return;
 
-  const path = `sprites/tiles/${c.base}_${c.dir}.png`;
-  const im = img(path);
+  const im = img(`sprites/tiles/${c.base}_${c.dir}.png`);
   const h = ISO.H * zoom;
   const layer = Math.max(0, Number(z) || 0);
 
-  const alphaAnterior = ctx.globalAlpha;
+  const previousAlpha = ctx.globalAlpha;
+  const previousFilter = ctx.filter;
+
+  const hue = -Math.min(48, layer * 12);
   ctx.globalAlpha = alpha;
+  ctx.filter = hue !== 0 ? `hue-rotate(${hue}deg) saturate(1.15)` : "none";
 
   if (im) {
-    const variant = getTileVariant(path, layer, im);
     const dw = 256 * zoom;
     const dh = 352 * zoom;
 
     ctx.drawImage(
-      variant,
+      im,
       p.x - dw / 2,
       p.y + h / 2 + ISO.OFF * zoom - dh,
       dw,
@@ -727,8 +729,10 @@ function drawTile(c, gx, gy, z, alpha) {
     );
   }
 
-  ctx.globalAlpha = alphaAnterior;
+  ctx.globalAlpha = previousAlpha;
+  ctx.filter = previousFilter;
 }
+
 
 
 function drawBarge(b) {
