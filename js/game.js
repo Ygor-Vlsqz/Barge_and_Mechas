@@ -696,26 +696,21 @@ function drawTile(c, gx, gy, z, alpha) {
   const p = w2s(gx + 0.5, gy + 0.5, z);
   if (offscreen(p)) return;
 
-  const im = img(`sprites/tiles/${c.base}_${c.dir}.png`);
+  const path = `sprites/tiles/${c.base}_${c.dir}.png`;
+  const im = img(path);
   const h = ISO.H * zoom;
-
-  // Ajuste estes valores para controlar a intensidade do amarelado.
-  const HUE_POR_CAMADA = 12;
-  const HUE_MAXIMO = 48;
-  const camada = Math.max(0, Number(z) || 0);
-  const hue = -Math.min(HUE_MAXIMO, camada * HUE_POR_CAMADA);
+  const layer = Math.max(0, Number(z) || 0);
 
   const alphaAnterior = ctx.globalAlpha;
-  const filtroAnterior = ctx.filter;
-
   ctx.globalAlpha = alpha;
-  ctx.filter = hue !== 0 ? `hue-rotate(${hue}deg) saturate(1.15)` : "none";
 
   if (im) {
+    const variant = getTileVariant(path, layer, im);
     const dw = 256 * zoom;
     const dh = 352 * zoom;
+
     ctx.drawImage(
-      im,
+      variant,
       p.x - dw / 2,
       p.y + h / 2 + ISO.OFF * zoom - dh,
       dw,
@@ -727,14 +722,14 @@ function drawTile(c, gx, gy, z, alpha) {
       p.y,
       ISO.W * zoom,
       h,
-      camada > 0 ? "#8a7545" : "#2f5d3a",
+      layer > 0 ? "#8a7545" : "#2f5d3a",
       "#0003"
     );
   }
 
   ctx.globalAlpha = alphaAnterior;
-  ctx.filter = filtroAnterior;
 }
+
 
 function drawBarge(b) {
   const p = ws(b.x, b.y);
