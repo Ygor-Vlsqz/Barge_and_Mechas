@@ -27,7 +27,26 @@ const UPG = [
 const cv = document.getElementById("game"), ctx = cv.getContext("2d");
 const $ = id => document.getElementById(id);
 let BASE = null, MAP = null, G = null, VIEW = null, ended = false;
-const S = { myId: "host", online: false, isHost: true, code: null, roster: [], device: "pc", paused: false,
+const const S = {
+  myId: "host",
+  online: false,
+  isHost: true,
+  code: null,
+  roster: [],
+  device: "pc",
+  inputMode: "keyboard",
+  paused: false,
+  dev: {
+    on: false,
+    freeze: false,
+    god: false,
+    oneshot: false,
+    nums: false,
+    hitbox: false,
+    fps: false
+  }
+};
+S = { myId: "host", online: false, isHost: true, code: null, roster: [], device: "pc", paused: false,
   dev: { on: false, freeze: false, god: false, oneshot: false, nums: false, hitbox: false, fps: false } };
 const cam = { x: 30, y: 30 };
 let zoom = 0.45, fps = 60;
@@ -74,70 +93,177 @@ function buildUI() {
   <h1>MECHA <b>BARGE</b></h1>
   <div>Cofre: <b id="v-mat"></b> Mat • <b id="v-diag"></b> Diag</div>
   <input id="in-name" placeholder="Seu nome" maxlength="12">
-  <select id="sel-dev"><option value="auto">Dispositivo: Auto</option><option value="pc">💻 PC (mouse/teclado/controle)</option><option value="mobile">📱 Celular</option></select>
-  <div class="row"><button id="b-solo">Jogar Solo</button><button id="b-host">Criar Sala</button></div>
-  <div class="row"><input id="in-code" maxlength="4" placeholder="CÓDIGO"><button id="b-join">Entrar</button></div>
+
+  <label for="sel-dev">Plataforma</label>
+  <select id="sel-dev">
+    <option value="auto">Dispositivo: Auto</option>
+    <option value="pc">💻 PC</option>
+    <option value="mobile">📱 Celular</option>
+  </select>
+
+  <label for="sel-input">Controle para esta guia</label>
+  <select id="sel-input">
+    <option value="keyboard">⌨️ Teclado</option>
+    <option value="gamepad">🎮 Joystick</option>
+  </select>
+
+  <div class="row">
+    <button id="b-solo">Jogar Solo</button>
+    <button id="b-host">Criar Sala</button>
+  </div>
+  <div class="row">
+    <input id="in-code" maxlength="4" placeholder="CÓDIGO">
+    <button id="b-join">Entrar</button>
+  </div>
   <div id="room"></div>
   <button id="b-start" class="hide">🚀 Iniciar Expedição</button>
   <label><input type="checkbox" id="chk-dev"> Mostrar opções Dev/Debug</label>
 </div></div>
-<div id="hud" class="hide"><span id="h-wave"></span><span id="h-loot"></span><span id="h-me"></span></div>
+
+<div id="hud" class="hide">
+  <span id="h-wave"></span>
+  <span id="h-loot"></span>
+  <span id="h-me"></span>
+</div>
 <div id="prompt" class="hide"></div>
 <div id="log"></div>
-<div id="vote" class="ov hide"><div class="box"><h2>Pausa entre ondas</h2><p id="vote-info"></p>
-  <div class="row"><button id="b-stay">✅ Ficar (Y / B3)</button><button id="b-leave">🚀 Extrair (N / B2)</button></div></div></div>
-<div id="term" class="ov hide"><div class="box wide"><h2>Terminal da Barcaça</h2><p id="term-info"></p>
-  <div id="term-list" class="grid"></div>
-  <div class="row"><button id="b-repair">🔧 Reparar +80 (20 Mat)</button><button id="b-term-close">Fechar</button></div></div></div>
-<div id="pause" class="ov hide"><div class="box"><h2>Pausa</h2>
-  <button id="b-resume">Continuar</button><button id="b-quit">Sair da partida</button></div></div>
-<div id="end" class="ov hide"><div class="box"><h2 id="end-t"></h2><p id="end-d"></p>
-  <button onclick="location.reload()">Voltar ao lobby</button></div></div>
-<div id="devp" class="hide"></div>
-<div id="mob" class="hide"><div id="joy"><div id="joy-k"></div></div>
-  <button class="mb" data-a="fire">FIRE</button><button class="mb" data-a="toggle">EVA</button>
-  <button class="mb" data-a="pickup">USE</button><button class="mb" data-a="special">PULO</button>
-  <button class="mb" data-a="drop">SOLTAR</button></div>`);
 
-  $("v-mat").textContent = vault.mat; $("v-diag").textContent = vault.diag;
+<div id="vote" class="ov hide"><div class="box">
+  <h2>Pausa entre ondas</h2>
+  <p id="vote-info"></p>
+  <div class="row">
+    <button id="b-stay">✅ Ficar (Y / B3)</button>
+    <button id="b-leave">🚀 Extrair (N / B2)</button>
+  </div>
+</div></div>
+
+<div id="term" class="ov hide"><div class="box wide">
+  <h2>Terminal da Barcaça</h2>
+  <p id="term-info"></p>
+  <div id="term-list" class="grid"></div>
+  <div class="row">
+    <button id="b-repair">🔧 Reparar +80 (20 Mat)</button>
+    <button id="b-term-close">Fechar</button>
+  </div>
+</div></div>
+
+<div id="pause" class="ov hide"><div class="box">
+  <h2>Pausa</h2>
+  <button id="b-resume">Continuar</button>
+  <button id="b-quit">Sair da partida</button>
+</div></div>
+
+<div id="end" class="ov hide"><div class="box">
+  <h2 id="end-t"></h2>
+  <p id="end-d"></p>
+  <button onclick="location.reload()">Voltar ao lobby</button>
+</div></div>
+
+<div id="devp" class="hide"></div>
+
+<div id="mob" class="hide">
+  <div id="joy"><div id="joy-k"></div></div>
+  <button class="mb" data-a="fire">FIRE</button>
+  <button class="mb" data-a="toggle">EVA</button>
+  <button class="mb" data-a="pickup">USE</button>
+  <button class="mb" data-a="special">PULO</button>
+  <button class="mb" data-a="drop">SOLTAR</button>
+</div>`);
+
+  $("v-mat").textContent = vault.mat;
+  $("v-diag").textContent = vault.diag;
   $("in-name").value = localStorage.getItem("mbarge_name") || "";
 
-  $("b-solo").onclick = () => { setupLobby(); S.roster = [{ id: "host", name: myName() }]; startAsHost(); };
-  $("b-host").onclick = () => {
-    setupLobby(); S.online = true; S.code = genCode();
-    S.roster = [{ id: "host", name: myName() }];
-    Net.host(S.code); $("b-start").classList.remove("hide"); renderRoom();
+  // Guarda a escolha feita no lobby para que setupLobby/readInput possam usá-la.
+  S.inputMode = $("sel-input").value;
+  $("sel-input").onchange = e => {
+    S.inputMode = e.target.value;
   };
+
+  $("b-solo").onclick = () => {
+    S.inputMode = $("sel-input").value;
+    setupLobby();
+    S.roster = [{ id: "host", name: myName() }];
+    startAsHost();
+  };
+
+  $("b-host").onclick = () => {
+    S.inputMode = $("sel-input").value;
+    setupLobby();
+    S.online = true;
+    S.code = genCode();
+    S.roster = [{ id: "host", name: myName() }];
+    Net.host(S.code);
+    $("b-start").classList.remove("hide");
+    renderRoom();
+  };
+
   $("b-join").onclick = () => {
-    setupLobby(); S.online = true; S.isHost = false;
+    S.inputMode = $("sel-input").value;
+    setupLobby();
+    S.online = true;
+    S.isHost = false;
     S.code = $("in-code").value.trim().toUpperCase();
     if (S.code.length !== 4) return alert("Código inválido");
-    Net.join(S.code, myName()); $("room").textContent = "Conectando...";
+    Net.join(S.code, myName());
+    $("room").textContent = "Conectando...";
   };
+
   $("b-start").onclick = startAsHost;
+
   $("chk-dev").onchange = e => {
-    if (!e.target.checked) { S.dev.on = false; $("devp").classList.add("hide"); return; }
-    if (prompt("Código de acesso Dev:") !== DEV_CODE) { e.target.checked = false; return alert("Código inválido"); }
-    S.dev.on = true; buildDev();
+    if (!e.target.checked) {
+      S.dev.on = false;
+      $("devp").classList.add("hide");
+      return;
+    }
+    if (prompt("Código de acesso Dev:") !== DEV_CODE) {
+      e.target.checked = false;
+      return alert("Código inválido");
+    }
+    S.dev.on = true;
+    buildDev();
   };
+
   $("b-stay").onclick = () => vote("stay");
   $("b-leave").onclick = () => vote("leave");
   $("b-repair").onclick = () => act({ t: "repair" });
   $("b-term-close").onclick = () => $("term").classList.add("hide");
-  $("term-list").onclick = e => { const u = e.target.dataset?.buy; if (u) act({ t: "buy", u }); };
+
+  $("term-list").onclick = e => {
+    const u = e.target.dataset?.buy;
+    if (u) act({ t: "buy", u });
+  };
+
   $("b-resume").onclick = togglePause;
+
   $("b-quit").onclick = () => {
     $("pause").classList.add("hide");
-    if (S.isHost) hostEnd();
-    else { Net.peer?.destroy(); showEnd("Você saiu", "Saiu no meio da onda: loot perdido."); }
+    if (S.isHost) {
+      hostEnd();
+    } else {
+      Net.peer?.destroy();
+      showEnd("Você saiu", "Saiu no meio da onda: loot perdido.");
+    }
   };
 }
 
+
 function setupLobby() {
   localStorage.setItem("mbarge_name", myName());
-  const d = $("sel-dev").value;
-  S.device = d === "auto" ? (matchMedia("(pointer:coarse)").matches ? "mobile" : "pc") : d;
+
+  const deviceSelect = $("sel-dev");
+  const device = deviceSelect?.value || "auto";
+  S.device = device === "auto"
+    ? (matchMedia("(pointer:coarse)").matches ? "mobile" : "pc")
+    : device;
+
+  // O select precisa existir no HTML com id="sel-input"
+  // e opções value="keyboard" e value="gamepad".
+  const inputSelect = $("sel-input");
+  S.inputMode = inputSelect?.value || "keyboard";
 }
+
 const myName = () => ($("in-name").value.trim() || "Piloto").slice(0, 12);
 function genCode() { const c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({ length: 4 }, () => c[Math.random() * c.length | 0]).join(""); }
 function renderRoom() {
