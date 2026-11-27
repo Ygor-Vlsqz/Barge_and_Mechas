@@ -692,6 +692,85 @@ function bar(x, y, f, c) {
 }
 const offscreen = p => p.x < -300 || p.x > cv.width + 300 || p.y < -400 || p.y > cv.height + 400;
 
+const TILE_VARIANTS = new Map();
+const TILE_VARIANTS_MAX = 64;
+
+function getTileVariant(path, layer, image) {
+  const scale = zoom.toFixed(3);
+  const key = `${path}|${layer}|${scale}`;
+
+  if (TILE_VARIANTS.has(key)) {
+    const cached = TILE_VARIANTS.get(key);
+    TILE_VARIANTS.delete(key);
+    TILE_VARIANTS.set(key, cached);
+    return cached;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(256 * zoom));
+  canvas.height = Math.max(1, Math.ceil(352 * zoom));
+
+  const tileCtx = canvas.getContext("2d");
+  if (!tileCtx) return image;
+
+  const hue = -Math.min(48, Math.max(0, layer) * 12);
+  tileCtx.filter = hue ? `hue-rotate(${hue}deg) saturate(1.15)` : "none";
+  tileCtx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  tileCtx.filter = "none";
+
+  TILE_VARIANTS.set(key, canvas);
+
+  if (TILE_VARIANTS.size > TILE_VARIANTS_MAX) {
+    const oldestKey = TILE_VARIANTS.keys().next().value;
+    TILE_VARIANTS.delete(oldestKey);
+  }
+
+  return canvas;
+}
+
+function drawTile(c, gx, gy, z, alpha) {
+  const p = w2s(gx + 0.5, gy + 0.5, z);
+  if (offscreen(p)) return;
+
+  const path = `sprites/tiles/${c.base}_${c.dir}.png`;
+  const image = img(path);
+  const h = ISO.H * zoom;
+  const layer = Math.max(0, Number(z) || 0);
+  const previousAlpha = ctx.globalAlpha;
+
+  ctx.globalAlpha = alpha;
+
+  if (image) {
+    const variant = getTileVariant(path, layer, image);
+    const dw = 256 * zoom;
+    const dh = 352 * zoom;
+
+    ctx.drawImage(
+      variant,
+      p.x - dw / 2,
+      p.y + h / 2 + ISO.OFF * zoom - dh,
+      dw,
+      dh
+    );
+  } else {
+    diamond(
+      p.x,
+      p.y,
+      ISO.W * zoom,
+      h,
+      layer > 0 ? "#8a7545" : "#2f5d3a",
+      "#0003"
+    );
+  }
+
+  ctx.globalAlpha = previousAlpha;
+}
+
+// Nas funções já existentes de keydown e keyup,
+// coloque esta verificação logo no começo de cada callback:
+if (typeof e.key !== "string") return;
+
+
 function drawTile(c, gx, gy, z, alpha) {
   const p = w2s(gx + 0.5, gy + 0.5, z);
   if (offscreen(p)) return;
