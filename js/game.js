@@ -695,7 +695,7 @@ const offscreen = p => p.x < -300 || p.x > cv.width + 300 || p.y < -400 || p.y >
 function drawTile(c, gx, gy, z, alpha) {
   const p = w2s(gx + 0.5, gy + 0.5, z);
   if (offscreen(p)) return;
-  const im = img(`${c.base}_${c.dir}.png`), h = ISO.H * zoom;
+  const im = img(`sprites/tiles/${c.base}_${c.dir}.png`), h = ISO.H * zoom;
   ctx.globalAlpha = alpha;
   if (im) { const dw = 256 * zoom, dh = 352 * zoom; ctx.drawImage(im, p.x - dw / 2, p.y + h / 2 + ISO.OFF * zoom - dh, dw, dh); }
   else diamond(p.x, p.y, ISO.W * zoom, h, z ? "#475569" : "#2f5d3a", "#0003");
