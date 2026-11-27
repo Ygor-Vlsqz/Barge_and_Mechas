@@ -27,7 +27,7 @@ const UPG = [
 const cv = document.getElementById("game"), ctx = cv.getContext("2d");
 const $ = id => document.getElementById(id);
 let BASE = null, MAP = null, G = null, VIEW = null, ended = false;
-const const S = {
+const S = {
   myId: "host",
   online: false,
   isHost: true,
