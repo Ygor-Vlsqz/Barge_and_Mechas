@@ -10,7 +10,6 @@ const COLORS = ["#38bdf8", "#f43f5e", "#22c55e", "#eab308", "#a855f7", "#f97316"
 const PMAX = 60, MW = 1.6, PW = 0.5;
 const EDGES = ["toggle", "special", "pickup", "drop"];
 
-// Liberados por diagrama (aleatório). Raros precisam de várias partes.
 const UPG = [
   { id: "dmg", name: "Calibre de Plasma", desc: "+15% dano", max: 6, cost: 20, w: 3 },
   { id: "rof", name: "Capacitor Rápido", desc: "+12% cadência", max: 5, cost: 20, w: 3 },
@@ -50,6 +49,10 @@ function w2s(x, y, z = 0) {
     y: ((x + y) - (cam.x + cam.y)) * ISO.H / 2 * zoom - z * ISO.Z * zoom + cv.height / 2
   };
 }
+// Posição considerando a altura do terreno + profundidade de desenho
+const ws = (x, y, z = 0) => w2s(x, y, z + MAP.gz(x, y));
+const dk = (x, y) => Math.floor(x) + Math.floor(y) + 1 + (MAP.gz(x, y) + 0.5) * 0.01;
+
 function s2w(sx, sy) {
   const a = (sx - cv.width / 2) / (ISO.W / 2 * zoom) + (cam.x - cam.y);
   const b = (sy - cv.height / 2) / (ISO.H / 2 * zoom) + (cam.x + cam.y);
@@ -224,6 +227,7 @@ function beginGame(seed, roster) {
   const i = Math.max(0, roster.findIndex(r => r.id === S.myId));
   const bi = Math.floor(i / 4) % MAP.bases.length, s = MAP.bases[bi].spawns[i % 4];
   cam.x = s.x; cam.y = s.y;
+  log(`🗺️ Bioma: ${MAP.biomeName}`, "#7dd3fc");
   if (S.isHost) { G = newGame(roster); VIEW = pack(); }
 }
 
@@ -315,7 +319,6 @@ function readInput() {
     const a = actorV(me), m = s2w(mouse.x, mouse.y); ax = m.x - a.x; ay = m.y - a.y;
   }
 
-  // E/USE perto da barcaça sem carcaça por perto: abre o terminal localmente
   if (edges.pickup && me && VIEW) {
     const a = actorV(me), b = VIEW.barges[me.base];
     const nearB = Math.abs(a.x - b.x) < b.size / 2 + 1.6 && Math.abs(a.y - b.y) < b.size / 2 + 1.6;
@@ -331,18 +334,21 @@ const L = id => G.lvl[id] || 0;
 const stats = () => ({ dmg: 20 * (1 + 0.15 * L("dmg")), rof: 0.22 / (1 + 0.12 * L("rof")), hp: 220 + 40 * L("hull"),
   spd: 4.6 * (1 + 0.08 * L("speed")), shots: 1 + L("multi") });
 
-function blocked(x, y, w, air) {
+function blocked(x, y, w, air, fromH) {
   const h = w / 2;
   if (x - h < 0.2 || y - h < 0.2 || x + h > MAP.w - 0.2 || y + h > MAP.h - 0.2) return true;
   if (!air) for (let gx = Math.floor(x - h); gx <= Math.floor(x + h); gx++)
-    for (let gy = Math.floor(y - h); gy <= Math.floor(y + h); gy++)
-      if (MAP.solid.has(gx + "," + gy)) return true;
+    for (let gy = Math.floor(y - h); gy <= Math.floor(y + h); gy++) {
+      if (MAP.isSolid(gx, gy)) return true;
+      if (fromH != null && Math.abs(MAP.gz(gx + 0.5, gy + 0.5) - fromH) > 0.6) return true;
+    }
   for (const b of G.barges) { const s = b.size / 2; if (x + h > b.x - s && x - h < b.x + s && y + h > b.y - s && y - h < b.y + s) return true; }
   return false;
 }
 function move(o, dx, dy, w, air) {
-  if (!blocked(o.x + dx, o.y, w, air)) o.x += dx;
-  if (!blocked(o.x, o.y + dy, w, air)) o.y += dy;
+  const fh = air ? null : MAP.gz(o.x, o.y);
+  if (!blocked(o.x + dx, o.y, w, air, fh)) o.x += dx;
+  if (!blocked(o.x, o.y + dy, w, air, fh)) o.y += dy;
 }
 function fixPos(o, w) {
   if (!blocked(o.x, o.y, w, false)) return;
@@ -389,7 +395,6 @@ function updatePlayer(p, dt) {
   }
   const inM = p.mode === "mecha", a = inM ? p : p.pilot, w = inM ? MW : PW;
 
-  // Pulo
   if (inM && i.special && L("jump") && p.z <= 0) p.vz = 5 + L("jump") * 0.8;
   if (p.z > 0 || p.vz) {
     p.vz -= 18 * dt; p.z += p.vz * dt;
@@ -425,7 +430,6 @@ function updatePlayer(p, dt) {
     if (!c) p.tow = null;
     else { const k = Math.min(1, 8 * dt); c.x += (a.x - Math.cos(a.ang) * 1.5 - c.x) * k; c.y += (a.y - Math.sin(a.ang) * 1.5 - c.y) * k; }
   }
-  // Astronauta perto da barcaça faz reparo
   if (!inM) { const b = nearBarge(a, 1.2); if (b) b.hp = Math.min(b.maxHp, b.hp + 12 * dt); }
 
   EDGES.forEach(k => i[k] = 0);
@@ -458,7 +462,7 @@ function hurt(t, amt) {
 function updateBarges(dt) {
   G.barges.forEach((b, bi) => {
     const n = G.players.filter(p => p.base === bi).length;
-    b.size = Math.min(5, 2 + Math.floor(n / 2)); // cresce/encolhe com os jogadores
+    b.size = Math.min(5, 2 + Math.floor(n / 2));
     b.maxHp = 500 + 100 * L("barge");
     if (L("turret") && (b.cd -= dt) <= 0) {
       const e = nearestEnemy(b, 8);
@@ -478,7 +482,7 @@ function spawnEnemy() {
     const an = Math.random() * 6.283, d = 18 + Math.random() * 8;
     const x = Math.max(1.5, Math.min(MAP.w - 1.5, b.x + Math.cos(an) * d));
     const y = Math.max(1.5, Math.min(MAP.h - 1.5, b.y + Math.sin(an) * d));
-    if (blocked(x, y, 1, false)) continue;
+    if (blocked(x, y, 1, false, MAP.gz(b.x, b.y))) continue;
     const sc = 1 + (G.wave - 1) * 0.22, side = Math.random() < 0.5 ? 1 : -1;
     const gun = Math.random() < Math.min(0.45, 0.15 + G.wave * 0.05);
     G.enemies.push(gun
@@ -507,7 +511,7 @@ function updateEnemy(e, dt) {
 function updateShots(dt) {
   G.shots = G.shots.filter(s => {
     s.x += s.vx * dt; s.y += s.vy * dt;
-    if ((s.life -= dt) <= 0 || MAP.solid.has(Math.floor(s.x) + "," + Math.floor(s.y))) return false;
+    if ((s.life -= dt) <= 0 || MAP.isSolid(Math.floor(s.x), Math.floor(s.y))) return false;
     if (s.f === "p") {
       const e = G.enemies.find(e => Math.hypot(e.x - s.x, e.y - s.y) < e.w / 2 + 0.25);
       if (e) { const d = S.dev.oneshot ? e.hp : s.dmg; e.hp -= d; fx(e.x, e.y, Math.round(d), "#fde047"); return false; }
@@ -678,7 +682,7 @@ function diamond(x, y, w, h, fill, stroke) {
   if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
 }
 function ell(x, y, r, fill, z = 0) {
-  const p = w2s(x, y, z);
+  const p = ws(x, y, z);
   ctx.beginPath(); ctx.ellipse(p.x, p.y, r * ISO.W / 2 * zoom * 1.41, r * ISO.H / 2 * zoom * 1.41, 0, 0, 6.29);
   ctx.fillStyle = fill; ctx.fill();
 }
@@ -698,20 +702,20 @@ function drawTile(c, gx, gy, z, alpha) {
   ctx.globalAlpha = 1;
 }
 function drawBarge(b) {
-  const p = w2s(b.x, b.y);
+  const p = ws(b.x, b.y);
   diamond(p.x, p.y, ISO.W * zoom * b.size, ISO.H * zoom * b.size, "#f59e0b55", "#f59e0b");
   ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.max(10, 16 * zoom * 2)}px sans-serif`; ctx.textAlign = "center";
   ctx.fillText("BARCAÇA", p.x, p.y + 4); bar(p.x, p.y + 12, b.hp / b.maxHp, "#38bdf8");
 }
 function drawMech(p) {
-  const s = w2s(p.x, p.y, p.z), sz = 256 * zoom;
+  const s = ws(p.x, p.y, p.z), sz = 256 * zoom;
   ell(p.x, p.y, 0.85, p.color + "44");
   ctx.globalAlpha = p.wreck > 0 ? 0.4 : 1;
   const im = img("Watcher.png");
   if (im) ctx.drawImage(im, s.x - sz / 2, s.y - sz * 0.75, sz, sz);
   else diamond(s.x, s.y - sz * 0.25, sz * 0.6, sz * 0.5, p.color, "#fff");
   ctx.globalAlpha = 1;
-  const t = w2s(p.x + Math.cos(p.aim) * 1.3, p.y + Math.sin(p.aim) * 1.3, p.z + 0.3);
+  const t = ws(p.x + Math.cos(p.aim) * 1.3, p.y + Math.sin(p.aim) * 1.3, p.z + 0.3);
   ctx.strokeStyle = p.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s.x, s.y - ISO.Z * zoom * 0.3); ctx.lineTo(t.x, t.y); ctx.stroke(); ctx.lineWidth = 1;
   ctx.fillStyle = p.color; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center";
   ctx.fillText(p.name + (p.wreck > 0 ? " ✖" : ""), s.x, s.y - sz * 0.8);
@@ -720,7 +724,7 @@ function drawMech(p) {
 function drawPilot(p) {
   if (p.respawn > 0) return;
   ell(p.pilot.x, p.pilot.y, 0.25, "#fbbf24");
-  const s = w2s(p.pilot.x, p.pilot.y, 0.3);
+  const s = ws(p.pilot.x, p.pilot.y, 0.3);
   ctx.beginPath(); ctx.arc(s.x, s.y, 7, 0, 6.29); ctx.fillStyle = p.color; ctx.fill();
   bar(s.x, s.y - 18, p.pilot.hp / PMAX, "#fbbf24");
 }
@@ -731,47 +735,53 @@ function render() {
   const me = myP(), ma = me && actorV(me);
   if (ma) { cam.x += (ma.x - cam.x) * 0.12; cam.y += (ma.y - cam.y) * 0.12; }
 
-  // Chão em ordem diagonal
-  for (let sum = 0; sum <= MAP.w + MAP.h - 2; sum++)
-    for (let x = Math.max(0, sum - MAP.h + 1); x <= Math.min(MAP.w - 1, sum); x++) {
-      const c = MAP.layers[0][sum - x][x]; if (c) drawTile(c, x, sum - x, 0, 1);
-    }
+  // Área visível
+  const kx = ISO.W / 2 * zoom, ky = ISO.H / 2 * zoom, cs = cam.x + cam.y, cdf = cam.x - cam.y;
+  const s0 = Math.floor(cs - cv.height / 2 / ky) - 3, s1 = Math.ceil(cs + cv.height / 2 / ky) + 12;
+  const d0 = Math.floor(cdf - cv.width / 2 / kx) - 3, d1 = Math.ceil(cdf + cv.width / 2 / kx) + 3;
+  const vis = (x, y) => { const s = x + y, d = x - y; return s >= s0 && s <= s1 && d >= d0 && d <= d1; };
 
-  // Camadas superiores + entidades, ordenadas por profundidade
+  // Chão (camada 0), só o visível
+  for (let sum = Math.max(0, s0); sum <= Math.min(MAP.w + MAP.h - 2, s1); sum++) {
+    const xa = Math.max(0, sum - MAP.h + 1, Math.ceil((sum + d0) / 2));
+    const xb = Math.min(MAP.w - 1, sum, Math.floor((sum + d1) / 2));
+    for (let x = xa; x <= xb; x++) { const c = MAP.layers[0][sum - x][x]; if (c) drawTile(c, x, sum - x, 0, 1); }
+  }
+
   const list = [];
   const md = ma ? ma.x + ma.y : 0, mc = ma ? ma.x - ma.y : 0;
   for (const t of MAP.upper) {
-    const d = t.x + t.y + 1;
-    const fade = ma && d > md + 0.5 && d - md < 4 && Math.abs((t.x - t.y) - mc) < 2.5;
-    list.push([d + t.z * 0.01, () => drawTile(t.c, t.x, t.y, t.z, fade ? 0.35 : 1)]);
+    if (!vis(t.x, t.y)) continue;
+    const fade = ma && t.d > md + 0.5 && t.d - md < 4 && Math.abs((t.x - t.y) - mc) < 2.5;
+    list.push([t.d, () => drawTile(t.c, t.x, t.y, t.z, fade ? 0.35 : 1)]);
   }
-  VIEW.barges.forEach(b => list.push([b.x + b.y, () => drawBarge(b)]));
-  VIEW.carcasses.forEach(c => list.push([c.x + c.y, () => ell(c.x, c.y, 0.4, "#94a3b8")]));
-  VIEW.pickups.forEach(k => list.push([k.x + k.y, () => ell(k.x, k.y, 0.3 + Math.sin(performance.now() / 150) * 0.05, "#c084fc")]));
-  VIEW.enemies.forEach(e => list.push([e.x + e.y, () => {
+  VIEW.barges.forEach(b => list.push([dk(b.x, b.y), () => drawBarge(b)]));
+  VIEW.carcasses.forEach(c => list.push([dk(c.x, c.y), () => ell(c.x, c.y, 0.4, "#94a3b8")]));
+  VIEW.pickups.forEach(k => list.push([dk(k.x, k.y), () => ell(k.x, k.y, 0.3 + Math.sin(performance.now() / 150) * 0.05, "#c084fc")]));
+  VIEW.enemies.forEach(e => list.push([dk(e.x, e.y), () => {
     ell(e.x, e.y, e.w / 2, e.type === "gunner" ? "#a855f7" : "#ef4444");
-    const s = w2s(e.x, e.y, 0.5); bar(s.x, s.y - 14, e.hp / e.maxHp, "#f87171");
+    const s = ws(e.x, e.y, 0.5); bar(s.x, s.y - 14, e.hp / e.maxHp, "#f87171");
   }]));
   VIEW.players.forEach(p => {
-    list.push([p.x + p.y, () => drawMech(p)]);
-    if (p.mode === "pilot") list.push([p.pilot.x + p.pilot.y, () => drawPilot(p)]);
+    list.push([dk(p.x, p.y), () => drawMech(p)]);
+    if (p.mode === "pilot") list.push([dk(p.pilot.x, p.pilot.y), () => drawPilot(p)]);
   });
-  VIEW.shots.forEach(s => list.push([s.x + s.y, () => {
-    const p = w2s(s.x, s.y, 0.35); ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 6.29);
+  VIEW.shots.forEach(s => list.push([dk(s.x, s.y), () => {
+    const p = ws(s.x, s.y, 0.35); ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 6.29);
     ctx.fillStyle = s.f === "p" ? "#fde047" : "#f472b6"; ctx.fill();
   }]));
   list.sort((a, b) => a[0] - b[0]).forEach(e => e[1]());
 
   if (S.dev.hitbox) {
-    VIEW.players.forEach(p => { const a = actorV(p), w = p.mode === "mecha" ? MW : PW, s = w2s(a.x, a.y); diamond(s.x, s.y, ISO.W * zoom * w, ISO.H * zoom * w, null, "#0f0"); });
-    VIEW.enemies.forEach(e => { const s = w2s(e.x, e.y); diamond(s.x, s.y, ISO.W * zoom * e.w, ISO.H * zoom * e.w, null, "#f00"); });
+    VIEW.players.forEach(p => { const a = actorV(p), w = p.mode === "mecha" ? MW : PW, s = ws(a.x, a.y); diamond(s.x, s.y, ISO.W * zoom * w, ISO.H * zoom * w, null, "#0f0"); });
+    VIEW.enemies.forEach(e => { const s = ws(e.x, e.y); diamond(s.x, s.y, ISO.W * zoom * e.w, ISO.H * zoom * e.w, null, "#f00"); });
   }
   if (S.dev.nums) VIEW.fx.forEach(f => {
-    const s = w2s(f.x, f.y, 1 + (0.8 - f.t)); ctx.fillStyle = f.c; ctx.font = "bold 14px sans-serif"; ctx.textAlign = "center"; ctx.fillText(f.txt, s.x, s.y);
+    const s = ws(f.x, f.y, 1 + (0.8 - f.t)); ctx.fillStyle = f.c; ctx.font = "bold 14px sans-serif"; ctx.textAlign = "center"; ctx.fillText(f.txt, s.x, s.y);
   });
   if (S.dev.fps) {
     ctx.fillStyle = "#0f0"; ctx.font = "12px monospace"; ctx.textAlign = "left";
-    ctx.fillText(`FPS ${fps | 0} | inimigos ${VIEW.enemies.length} | tiros ${VIEW.shots.length} | mapa ${MAP.w}x${MAP.h}`, 10, cv.height - 10);
+    ctx.fillText(`FPS ${fps | 0} | inimigos ${VIEW.enemies.length} | tiros ${VIEW.shots.length} | mapa ${MAP.w}x${MAP.h} | ${MAP.biomeName}`, 10, cv.height - 10);
   }
 }
 

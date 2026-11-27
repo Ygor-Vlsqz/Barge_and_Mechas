@@ -31,7 +31,175 @@ button {
   user-select: none;
 }
 
+.hide {
+  display: none !important;
+}
+
+.ov {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000a;
+  z-index: 10;
+}
+
+.box {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 300px;
+  max-width: 92vw;
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.box.wide {
+  width: 720px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.card {
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+button,
+input,
+select {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+
+button:disabled {
+  opacity: 0.4;
+}
+
+#hud {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 16px;
+  background: #0008;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+#prompt {
+  position: fixed;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #000b;
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+
+#log {
+  position: fixed;
+  top: 44px;
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+
+#devp {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #000c;
+  padding: 8px;
+  border-radius: 8px;
+  z-index: 20;
+}
+
+#mob {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#joy {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 45%;
+  height: 50%;
+  pointer-events: auto;
+}
+
+#joy-k {
+  display: none;
+  position: absolute;
+  width: 50px;
+  height: 50px;
+  margin: -25px;
+  border-radius: 50%;
+  background: #fff4;
+}
+
+.mb {
+  position: absolute;
+  pointer-events: auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+}
+
+.mb[data-a="fire"] {
+  right: 20px;
+  bottom: 20px;
+  width: 84px;
+  height: 84px;
+}
+
+.mb[data-a="toggle"] {
+  right: 120px;
+  bottom: 20px;
+}
+
+.mb[data-a="pickup"] {
+  right: 20px;
+  bottom: 120px;
+}
+
+.mb[data-a="special"] {
+  right: 110px;
+  bottom: 100px;
+}
+
+.mb[data-a="drop"] {
+  right: 190px;
+  bottom: 30px;
+}
 </style>
+
 </head>
 <body>
 <canvas id="game"></canvas>

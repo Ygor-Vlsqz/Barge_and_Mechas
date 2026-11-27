@@ -367,3 +367,63 @@
   else root.MapGen = api;
 })(typeof window !== 'undefined' ? window : globalThis);
 
+// ===================== FORMATO DO JOGO (ES module) =====================
+const MG = globalThis.MapGen;
+const isWater = b => /water|river/i.test(b) && !/Bridge/i.test(b);
+const isSlope = b => /slope/i.test(b) && !/river/i.test(b);
+
+export async function loadBase(url = "base.json") {
+  try { const r = await fetch(url); if (r.ok) return await r.json(); } catch {}
+  return {};
+}
+
+export function generateMap(base, players, seed, biome) {
+  const t = base?.tiles, avail = Array.isArray(t) ? t : t ? Object.keys(t) : undefined;
+  const m = MG.generate({ players, seed, biome, availableTiles: avail });
+  const W = m.gridW, H = m.gridH, Ls = m.layers, NL = Ls.length;
+  const ground = new Float32Array(W * H), solid = new Uint8Array(W * H), upper = [];
+
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    for (let z = 1; z < NL; z++) { const c = Ls[z][y][x]; if (c) upper.push({ x, y, z, c, d: x + y + 1 + z * 0.01 }); }
+    let top = null, g = 0;
+    for (let z = 0; z < NL; z++) { // chão = 1º tile com vazio acima (cavernas/rampas)
+      const c = Ls[z][y][x];
+      if (c && !(z + 1 < NL && Ls[z + 1][y][x])) { top = c; g = isSlope(c.base) ? z - 0.5 : z; break; }
+    }
+    ground[y * W + x] = g;
+    if (!top || isWater(top.base)) solid[y * W + x] = 1;
+  }
+  upper.sort((a, b) => a.d - b.d); // ordenado uma vez só
+
+  const inB = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+  const isSolid = (x, y) => !inB(x, y) || solid[y * W + x] === 1;
+  const gz = (x, y) => { const ix = Math.floor(x), iy = Math.floor(y); return inB(ix, iy) ? ground[iy * W + ix] : 0; };
+
+  // Bases: área plana 11x11 sem água, o mais longe possível umas das outras
+  let s = (m.seed >>> 0) || 1;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const R = 5, cand = [];
+  for (let cy = R + 1; cy < H - R - 1; cy += 2) for (let cx = R + 1; cx < W - R - 1; cx += 2) {
+    const h0 = ground[cy * W + cx]; let ok = true;
+    for (let y = cy - R; y <= cy + R && ok; y++) for (let x = cx - R; x <= cx + R; x++)
+      if (solid[y * W + x] || ground[y * W + x] !== h0) { ok = false; break; }
+    if (ok) cand.push([cx, cy]);
+  }
+  if (!cand.length) cand.push([W >> 1, H >> 1]);
+  const nb = Math.max(1, Math.ceil(players / 4)), picked = [cand[Math.floor(rnd() * cand.length)]];
+  while (picked.length < nb) {
+    let best = cand[0], bd = -1;
+    for (const c of cand) {
+      const d = Math.min(...picked.map(p => Math.hypot(p[0] - c[0], p[1] - c[1])));
+      if (d > bd) { bd = d; best = c; }
+    }
+    picked.push(best);
+  }
+  const bases = picked.map(([cx, cy]) => {
+    for (let y = cy - R; y <= cy + R; y++) for (let x = cx - R; x <= cx + R; x++) if (inB(x, y)) solid[y * W + x] = 0;
+    const bx = cx + 0.5, by = cy + 0.5;
+    return { barge: { x: bx, y: by }, spawns: [[4, 0], [-4, 0], [0, 4], [0, -4]].map(([dx, dy]) => ({ x: bx + dx, y: by + dy })) };
+  });
+
+  return { w: W, h: H, layers: Ls, upper, solid, ground, isSolid, gz, bases, biome: m.biome, biomeName: m.biomeName, seed: m.seed };
+}
