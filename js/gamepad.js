@@ -26,7 +26,7 @@ export function pollGamepad(index = null) {
   const s1 = edge(MAP.special1), s2 = edge(MAP.special2);
   return {
     id: gp.index, moveX: ax, moveY: ay, fire: btn(MAP.fire),
-    toggleSuit: edge(MAP.toggleSuit), special: s1 || s2,
+    toggleSuit: edge(MAP.toggleSuit), special: s1, special2: btn(MAP.special2),
     drop: edge(MAP.drop), pickup: edge(MAP.pickup),
     pause: edge(MAP.start), select: edge(MAP.select)
   };

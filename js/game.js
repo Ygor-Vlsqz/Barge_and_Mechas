@@ -3,7 +3,8 @@ import { pollGamepad } from "./gamepad.js";
 import { loadBase, generateMap } from "./mapgen.js";
 
 // ===================== CONFIGURAÇÃO =====================
-const ISO = { W: 220, H: 110, Z: 114, OFF: 118 };
+ISO.WATER = metrics.waterOffsetY ?? ISO.WATER;
+
 const DEV_CODE = "09041994";
 const SAVE_KEY = "mbarge_iso_v1";
 const COLORS = ["#38bdf8", "#f43f5e", "#22c55e", "#eab308", "#a855f7", "#f97316", "#14b8a6", "#ec4899"];
@@ -2117,78 +2118,53 @@ const offscreen = point =>
   || point.y < -400 || point.y > cv.height + 400;
 
 const TILE_VARIANTS = new Map();
-const TILE_VARIANTS_MAX = 64;
+const SINGLE_ANGLE = new Set(["crate-medium", "crate-small", "crate-wide"]);
+const OBJ_TILES = /^(block|column|crate|ladder|switch|arrowWall)/;
 
+function tilePath(t) {
+  const folder = OBJ_TILES.test(t.base) ? "sprites/objects/" : "sprites/tiles/";
+  return folder + (SINGLE_ANGLE.has(t.base) ? `${t.base}.png` : `${t.base}_${t.dir}.png`);
+}
+
+// Cache no tamanho original (sem zoom), criado uma única vez por sprite/camada
 function getTileVariant(path, layer, image) {
-  const scale = zoom.toFixed(3);
-  const key = `${path}|${layer}|${scale}`;
-
-  if (TILE_VARIANTS.has(key)) {
-    const cached = TILE_VARIANTS.get(key);
-    TILE_VARIANTS.delete(key);
-    TILE_VARIANTS.set(key, cached);
-    return cached;
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.ceil(256 * zoom));
-  canvas.height = Math.max(1, Math.ceil(352 * zoom));
-
-  const tileContext = canvas.getContext("2d");
-  if (!tileContext) return image;
-
-  const hue = -Math.min(48, Math.max(0, layer) * 12);
-  tileContext.filter = hue ? `hue-rotate(${hue}deg) saturate(1.15)` : "none";
-  tileContext.drawImage(image, 0, 0, canvas.width, canvas.height);
-  tileContext.filter = "none";
-
-  TILE_VARIANTS.set(key, canvas);
-
-  if (TILE_VARIANTS.size > TILE_VARIANTS_MAX) {
-    const oldestKey = TILE_VARIANTS.keys().next().value;
-    TILE_VARIANTS.delete(oldestKey);
-  }
-
-  return canvas;
+  const key = path + "|" + layer;
+  let c = TILE_VARIANTS.get(key);
+  if (c) return c;
+  if (layer === 0) { TILE_VARIANTS.set(key, image); return image; }
+  c = document.createElement("canvas");
+  c.width = image.naturalWidth;
+  c.height = image.naturalHeight;
+  const tc = c.getContext("2d");
+  tc.filter = `hue-rotate(${-Math.min(48, layer * 12)}deg) saturate(1.15)`;
+  tc.drawImage(image, 0, 0);
+  TILE_VARIANTS.set(key, c);
+  return c;
 }
 
 function drawTile(tile, gx, gy, z, alpha) {
   const point = w2s(gx + 0.5, gy + 0.5, z);
   if (offscreen(point)) return;
 
-  const path = `sprites/tiles/${tile.base}_${tile.dir}.png`;
+  const path = tilePath(tile);
   const image = img(path);
-  const height = ISO.H * zoom;
+  const h = ISO.H * zoom;
   const layer = Math.max(0, Number(z) || 0);
-  const previousAlpha = ctx.globalAlpha;
-
+  const prev = ctx.globalAlpha;
   ctx.globalAlpha = alpha;
 
   if (image) {
-    const variant = getTileVariant(path, layer, image);
-    const width = 256 * zoom;
-    const spriteHeight = 352 * zoom;
-
-    ctx.drawImage(
-      variant,
-      point.x - width / 2,
-      point.y + height / 2 + ISO.OFF * zoom - spriteHeight,
-      width,
-      spriteHeight
-    );
+    const v = getTileVariant(path, layer, image);
+    const dw = image.naturalWidth * zoom;
+    const dh = image.naturalHeight * zoom;
+    const extra = tile.base === "water_center" ? ISO.WATER : 0;
+    ctx.drawImage(v, point.x - dw / 2, point.y + h / 2 + (ISO.OFF + extra) * zoom - dh, dw, dh);
   } else {
-    diamond(
-      point.x,
-      point.y,
-      ISO.W * zoom,
-      height,
-      layer > 0 ? "#8a7545" : "#2f5d3a",
-      "#0003"
-    );
+    diamond(point.x, point.y, ISO.W * zoom, h, layer > 0 ? "#8a7545" : "#2f5d3a", "#0003");
   }
-
-  ctx.globalAlpha = previousAlpha;
+  ctx.globalAlpha = prev;
 }
+
 
 function drawBarge(barge) {
   const point = ws(barge.x, barge.y);
